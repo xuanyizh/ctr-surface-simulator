@@ -14,6 +14,12 @@ Preview: each panel uses the same intensity scale; all three features combine
 at the surface/amplitude level. Reproduce with `python compare_surfaces.py`
 (optional plotting dependency: `matplotlib`).
 
+The website includes this two-row comparison: a real-space height map above
+the detector image for every case. It uses the preview's Viridis/Magma palettes
+and a shared intensity range of 10⁻⁶ to 1. Display controls switch between the
+central crop and full surface, the rod close-up and full detector, or a wider
+10⁻⁸ to 1 colour range, using the existing simulation result.
+
 ## GitHub Pages deployment
 
 `index.html` runs the Python app entirely in the browser using Stlite/Pyodide.
@@ -24,8 +30,8 @@ hosts. These hosts must be reachable. Geometry downloads let you preserve work
 before closing the tab.
 
 Publish the root of `main` using GitHub Pages. The deployed files are
-`index.html`, `app.py`, `physics.py`, `plots.py`, `surface_model.py`, and
-`surface_ui.py`. The desktop Python source
+`index.html`, `app.py`, `physics.py`, `plots.py`, `surface_model.py`,
+`surface_ui.py`, `surface_plots.py`, and `plot_colors.py`. The desktop Python source
 uses the same geometry engine. Browser runtime: @stlite/browser 1.9.2.
 
 Browsers without WebGL automatically use 2D projections. The sidebar

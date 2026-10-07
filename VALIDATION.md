@@ -1,5 +1,19 @@
 # Validation record
 
+## Preview colours and paired maps — 2026-10-07
+
+The old live SVG gradient began with rgb(255, 171, 171) instead of Magma's
+near-black rgb(0, 0, 4). Streamlit replaces the literal hex colour #000004 as
+a categorical theme placeholder, even when theme=None. The shared palette
+module now supplies RGB strings sampled from the preview's 256-entry Magma
+and Viridis tables, including the linked-view intensity plot.
+
+The surface comparison pairs each case's real-space height map with its
+detector image. Heights share one range; detector intensities share 10⁻⁶–1
+by default, with power-of-ten labels. Missing Fourier samples stay NaN and
+render grey. Cropping and colour controls affect only the displayed figures.
+The numerical solver is unchanged.
+
 ## Run-button feedback — 2026-10-07
 
 The original browser run could queue all progress updates until the synchronous

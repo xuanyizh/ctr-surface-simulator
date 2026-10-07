@@ -8,15 +8,8 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from surface_model import SurfaceParameters, simulate_detector_steps
+from surface_plots import surface_comparison
 
-
-def _heatmap(x, y, z, title, scale, label, **kwargs):
-    fig = go.Figure(go.Heatmap(x=x, y=y, z=z, colorscale=scale,
-                             colorbar=dict(title=label), **kwargs))
-    fig.update_layout(title=title, height=390, margin=dict(l=35, r=15, t=50, b=45),
-                      xaxis_title='u (mm)', yaxis_title='v (mm)',
-                      yaxis=dict(scaleanchor='x', scaleratio=1))
-    return fig
 
 
 def export_npz(result, metadata):
@@ -134,7 +127,6 @@ async def render_surface_simulation(g, export_button):
     # Let the completion notice paint before preparing the figures and exports.
     if run:
         await asyncio.sleep(.1)
-    selected = cases['Selected combination']['surface']
     for message in sorted({w for case in cases.values() for stats in case['statistics'] for w in stats['warnings']}):
         st.warning(message)
     if not np.any(result['physical']):
@@ -144,22 +136,44 @@ async def render_surface_simulation(g, export_button):
         st.warning(f'{1 - fraction:.1%} of detector pixels lie outside this surface grid’s Fourier range. '
                    'They are blank / NaN, not zero intensity. Use a finer grid, a smaller patch (coherence), '
                    'or a narrower angular field of view.')
-    a, b = st.columns(2)
-    with a:
-        fig = _heatmap(selected.x / 10, selected.y / 10, selected.height_uc,
-                       'Selected surface · first coherent patch', 'Viridis', 'Height (uc)')
-        fig.update_layout(xaxis_title='Crystal x across steps (nm)', yaxis_title='Crystal y along steps (nm)')
-        st.plotly_chart(fig, width='stretch')
-    with b:
+    st.subheader('Surface and detector comparison')
+    view_a, view_b, view_c = st.columns(3)
+    surface_view = view_a.selectbox('Real-space extent',
+                                    ['Central crop (preview)', 'Full simulated patch'], key='surf_view_real')
+    detector_view = view_b.selectbox('Detector extent',
+                                     ['Rod close-up (preview)', 'Full detector'], key='surf_view_detector')
+    intensity_view = view_c.selectbox('Intensity colour range',
+                                      ['10⁻⁶ to 1 (preview)', '10⁻⁸ to 1'], key='surf_view_intensity')
+    log_floor = -6 if intensity_view.startswith('10⁻⁶') else -8
+    comparison = surface_comparison(result, saved['geometry'],
+                                    central_surface=surface_view.startswith('Central'),
+                                    detector_closeup=detector_view.startswith('Rod'), log_floor=log_floor)
+    st.caption('Top: real-space height for the first coherent patch, with x across steps and y along steps. '
+               'Bottom: coherent detector intensity. Each column is the same case in both spaces. '
+               'Every height map shares one scale; every detector map shares one logarithmic intensity scale.')
+    st.plotly_chart(comparison, width='stretch', theme=None, key='surface_comparison_chart',
+                    config={'toImageButtonOptions': {'filename': 'surface_detector_comparison',
+                                                     'width': 1800, 'height': 850, 'scale': 2}})
+    crop_note = ('Central surface crop: |x| ≤ 700 nm, |y| ≤ 500 nm. '
+                 if surface_view.startswith('Central') else 'Full simulated surface patch. ')
+    detector_note = ('Detector close-up: |u| ≤ 1.4 mm, |v| ≤ 8.5 mm, limited to the detector bounds. '
+                     if detector_view.startswith('Rod') else 'Full detector field of view. ')
+    st.caption(crop_note + detector_note + 'Axes have unequal scales in this compact view. '
+               'Use the chart fullscreen button for a larger view. Changing these display controls reuses the calculated result.')
+    st.caption('Grey detector pixels are outside the resolved Fourier range; dark pixels are low intensity. '
+               'Values below the colour range use its darkest colour. Cyan circles are ideal reference rod centres. '
+               'M is a normalized same-material morphology factor, with the common material CTR factor omitted. '
+               'Individual-case intensities must not be added together.')
+    with st.expander('Surface cross-section at y = 0'):
         fig = go.Figure()
         for name, case in cases.items():
             s = case['surface']
             fig.add_trace(go.Scatter(x=s.x / 10, y=s.height_uc[len(s.y) // 2], mode='lines',
                                      name=name, line_shape='hv'))
-        fig.update_layout(title='Surface cross-section at y = 0', height=390,
+        fig.update_layout(title='Surface cross-section at y = 0', height=390, template='plotly_white',
                           xaxis_title='Crystal x (nm)', yaxis_title='Height (uc)',
                           legend=dict(orientation='h'), margin=dict(l=35, r=15, t=50, b=45))
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width='stretch', theme=None)
     labels = dict(dx_nm='Cell Δx (nm)', dy_nm='Cell Δy (nm)', mean_width_nm='Mean terrace (nm)',
                   realized_width_cv='Width CV', realized_edge_rms_nm='Edge RMS (nm)',
                   edge_scale='Edge scale', island_area_fraction='Island area fraction',
@@ -168,28 +182,6 @@ async def render_surface_simulation(g, export_button):
                   for name, case in cases.items()], hide_index=True, width='stretch')
     st.caption('Statistics and height maps above describe the first realization. The export records statistics for every patch. '
                'Width CV measures the mean straight-edge spacings before jaggedness; edge RMS is measured after preventing crossings.')
-    st.markdown('**Detector comparison — a shared absolute morphology scale**')
-    st.caption('Colour = log10 of the normalized morphology intensity, from −8 to 0 for every map. '
-               'The common material/ideal-column CTR factor is omitted. These are not photon counts. '
-               'Each case includes its own stepped substrate; individual-case images must not be added together.')
-    columns = st.columns(2)
-    # Use geometry recorded with the result, so stale results never get new markers.
-    from physics import Geometry, rod_intersections
-    saved_records = rod_intersections(Geometry(**saved['geometry']))
-    for j, (name, case) in enumerate(cases.items()):
-        with columns[j % 2]:
-            intensity = case['intensity']
-            fig = _heatmap(result['u_mm'], result['v_mm'], np.log10(np.maximum(intensity, 1e-12)),
-                           name, 'Magma', 'log10 M', zmin=-8, zmax=0,
-                           customdata=result['q_crystal'] * saved['geometry']['a'] / (2 * np.pi),
-                           hovertemplate='u=%{x:.3f} mm<br>v=%{y:.3f} mm<br>log10 M=%{z:.3f}'
-                                         '<br>h=%{customdata[0]:.6f}<br>k=%{customdata[1]:.6f}'
-                                         '<br>l=%{customdata[2]:.6f}<extra></extra>')
-            peaks = [r for r in saved_records if r['status'] == 'Captured']
-            fig.add_trace(go.Scatter(x=[r['u'] for r in peaks], y=[r['v'] for r in peaks],
-                                     mode='markers', marker=dict(symbol='circle-open', size=8, color='cyan'),
-                                     name='Ideal mean-normal rod centres'))
-            st.plotly_chart(fig, width='stretch')
     profile = go.Figure()
     valid_rows = np.any(result['sampling_valid'], axis=1)
     for name, case in cases.items():

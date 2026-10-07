@@ -1,6 +1,7 @@
 import numpy as np
 import plotly.graph_objects as go
 from physics import pixel_q
+from plot_colors import MAGMA
 
 COLORS=['#1e88e5','#f4511e','#43a047','#8e24aa','#ffb300','#00acc1','#e53935','#3949ab','#6d4c41']
 
@@ -95,7 +96,7 @@ def reciprocal(g,u,v,zoom=False):
 
 def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity'):
     hkl=qc*g.a/(2*np.pi)
-    if layer=='Intensity': z=np.log10(np.maximum(I,1e-8)); scale='Magma'; label='log10 relative intensity'; limits=dict(zmin=-6,zmax=0)
+    if layer=='Intensity': z=np.log10(np.maximum(I,1e-8)); scale=MAGMA; label='log10 relative intensity'; limits=dict(zmin=-6,zmax=0)
     else: z=hkl[...,{'h':0,'k':1,'l':2}[layer]]; scale='RdBu';label=layer+' (r.l.u.)';limits={}
     f=go.Figure(go.Heatmap(x=u,y=v,z=z,customdata=hkl,colorscale=scale,colorbar=dict(title=label),hovertemplate='u=%{x:.3f} mm<br>v=%{y:.3f} mm<br>h=%{customdata[0]:.6f}<br>k=%{customdata[1]:.6f}<br>l=%{customdata[2]:.6f}<extra></extra>',**limits))
     rs=[r for r in records if r['status']=='Captured']
