@@ -35,11 +35,15 @@ took about 10 seconds for five maps; this is not a browser timing guarantee.
 generated height maps and solver output on one shared scale. Matplotlib is
 needed only for this optional preview script.
 
-The new modules are included in the Stlite static-loader file list, with an
-updated cache version. **The new extension has not yet been tested in the live
-GitHub Pages / WebAssembly runtime.** The earlier live-browser verification
-below applies to the original geometry explorer. AppTest checks Python widget
-execution/serialization, not browser layout or download completion.
+The extension was deployed to GitHub Pages on 2026-10-07 and checked in the
+live Stlite / WebAssembly runtime at
+https://xuanyizh.github.io/ctr-surface-simulator/ . The default 512 × 256 grid,
+padding 4, seed 2026 and one coherent patch completed all five cases. The
+surface map, cross-section, measured statistics, detector comparison and
+row sums rendered successfully; JSON and NPZ export links were present.
+The expected Fourier-range warning reported 23.3% unresolved detector pixels.
+This browser has no WebGL, so the geometry used its 2D projection fallback.
+Download completion and 3D rotation were not verified in this deployment check.
 
 These are mathematical and software checks, not agreement with experimental
 data or a full reproduction of the paper's statistical model. See
