@@ -206,7 +206,23 @@ def _interpolation_indices(axis, values):
     return idx, fraction, valid
 
 
+def _consume_steps(steps, progress=None):
+    """Run a cooperative calculation synchronously, retaining its return value."""
+    while True:
+        try:
+            update = next(steps)
+        except StopIteration as finished:
+            return finished.value
+        if progress is not None:
+            progress(update)
+
+
 def morphology_amplitude(surface, qc, g, padding=4):
+    """Synchronous interface to the same cooperative Fourier calculation."""
+    return _consume_steps(_morphology_amplitude_steps(surface, qc, g, padding))
+
+
+def _morphology_amplitude_steps(surface, qc, g, padding=4):
     """Complex normalized amplitude at arbitrary crystal q, including varying qz.
 
     Sum separately transformed integer-height masks with exp(i*qz*a*n).
@@ -232,12 +248,14 @@ def morphology_amplitude(surface, qc, g, padding=4):
     window = surface.illumination / surface.illumination.sum()
     pad = ((sy // 2 - ny // 2, sy // 2 - ny // 2),
            (sx // 2 - nx // 2, sx // 2 - nx // 2))
-    for n in np.unique(surface.height_uc):
+    levels = np.unique(surface.height_uc)
+    for level_index, n in enumerate(levels):
         field = np.pad(window * (surface.height_uc == n), pad)
         ft = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(field))) * sx * sy
         value = ((1 - ty) * ((1 - tx) * ft[iy, ix] + tx * ft[iy, ix + 1])
                  + ty * ((1 - tx) * ft[iy + 1, ix] + tx * ft[iy + 1, ix + 1]))
         amplitude += value * np.exp(1j * q[:, 2] * g.a * n)
+        yield level_index + 1, len(levels)
     # Integrate each constant-height rectangular lateral tile, rather than
     # silently treating a coarse grid cell as an atomic point scatterer.
     amplitude *= np.sinc(kx * dx / (2 * np.pi)) * np.sinc(ky * dy / (2 * np.pi))
@@ -262,6 +280,12 @@ def comparison_cases(p, compare=True):
 
 
 def simulate_detector(g, p=SurfaceParameters(), compare=True, progress=None):
+    """Synchronous API; progress receives a fraction between zero and one."""
+    callback = (lambda update: progress(update['fraction'])) if progress is not None else None
+    return _consume_steps(simulate_detector_steps(g, p, compare), callback)
+
+
+def simulate_detector_steps(g, p=SurfaceParameters(), compare=True):
     """Coherent patches; independent realizations are averaged as intensities.
 
     Pixel centres use the existing exact elastic geometry. No pixel blur or
@@ -276,20 +300,29 @@ def simulate_detector(g, p=SurfaceParameters(), compare=True, progress=None):
     results = {}
     cases = comparison_cases(p, compare)
     completed = 0
+    total = len(cases) * p.realizations
     for name, params in cases.items():
         intensity = np.zeros(U.shape)
         first = None
         statistics = []
         for j in range(p.realizations):
+            stage = f'{name} · patch {j + 1}/{p.realizations}'
+            yield dict(fraction=completed / total, text=f'{stage} · building surface')
             surface = generate_surface(g, params, j)
             if first is None:
                 first = surface
-            amplitude, valid = morphology_amplitude(surface, qc, g, p.padding)
+            steps = _morphology_amplitude_steps(surface, qc, g, p.padding)
+            while True:
+                try:
+                    level, levels = next(steps)
+                except StopIteration as finished:
+                    amplitude, valid = finished.value
+                    break
+                yield dict(fraction=(completed + level / levels) / total,
+                           text=f'{stage} · height {level}/{levels}')
             intensity += np.where(physical, np.abs(amplitude)**2, 0.) / p.realizations
             statistics.append(surface.stats)
             completed += 1
-            if progress is not None:
-                progress(completed / (len(cases) * p.realizations))
         results[name] = dict(intensity=intensity, surface=first, statistics=statistics)
     return dict(u_mm=u, v_mm=v, q_lab=qlab, q_crystal=qc,
                 sampling_valid=valid, physical=physical, cases=results)

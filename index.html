@@ -16,7 +16,7 @@
       const { mount } = await import("https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.js");
       const files = {};
       for (const filename of ["app.py", "physics.py", "plots.py", "surface_model.py", "surface_ui.py"]) {
-        const response = await fetch(new URL(filename + "?release=20261007-surface-1", location.href), {cache: "no-store"});
+        const response = await fetch(new URL(filename + "?release=20261007-progress-2", location.href), {cache: "no-store"});
         if (!response.ok) throw new Error(`Could not load ${filename}: HTTP ${response.status}`);
         files[filename] = await response.text();
       }
@@ -24,8 +24,11 @@
       const gl = probe.getContext('webgl2') || probe.getContext('webgl');
       files['browser_capabilities.json'] = JSON.stringify({webgl: !!gl});
       if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext();
+      // Stlite owns the event loop and supports top-level await. The desktop
+      // entry point uses asyncio.run(main()) instead.
+      files['browser_entry.py'] = 'from app import main\nawait main()\n';
       mount({
-        entrypoint: "app.py",
+        entrypoint: "browser_entry.py",
         files,
         requirements: ["numpy", "plotly==7.1.0"],
         streamlitConfig: {

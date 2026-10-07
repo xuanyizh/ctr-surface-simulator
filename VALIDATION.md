@@ -1,5 +1,19 @@
 # Validation record
 
+## Run-button feedback — 2026-10-07
+
+The original browser run could queue all progress updates until the synchronous
+calculation finished, making the Run button appear unresponsive. The solver
+now yields between height-level Fourier transforms. The browser entry point
+awaits the application, allowing the UI to display the current case, patch,
+percentage and elapsed time during execution. A persistent completion message
+points to the results below the button. Invalid settings show an explicit error.
+
+All 29 physics tests passed after this change. The interface checks also passed,
+including successful-run feedback, an oversized-FFT rejection, and preservation
+of the previous result without displaying it as a newly completed run.
+The numerical equations and default grid/padding are unchanged.
+
 ## Nonideal surface extension — 2026-10-07
 
 Environment: Python 3.12.14, NumPy 2.3.5, Plotly 7.1.0, Streamlit 1.65.0.

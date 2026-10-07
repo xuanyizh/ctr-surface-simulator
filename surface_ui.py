@@ -1,11 +1,13 @@
 """Optional, explicitly run surface-forward simulation inside the explorer."""
 import io
 import json
+import asyncio
+from time import perf_counter
 from dataclasses import asdict
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
-from surface_model import SurfaceParameters, simulate_detector
+from surface_model import SurfaceParameters, simulate_detector_steps
 
 
 def _heatmap(x, y, z, title, scale, label, **kwargs):
@@ -37,7 +39,7 @@ def export_npz(result, metadata):
     return buffer.getvalue()
 
 
-def render_surface_simulation(g, export_button):
+async def render_surface_simulation(g, export_button):
     st.subheader('Build a surface and calculate its coherent scattering')
     st.write('Switch terrace-width variation, jagged edges and islands on independently. '
              'The comparison evaluates each enabled feature alone and their selected combination, '
@@ -74,8 +76,9 @@ def render_surface_simulation(g, export_button):
         padding = c.selectbox('FFT padding', [2, 4, 8], index=1, key='surf_padding')
         realizations = d.selectbox('Independent patches', [1, 2, 4, 8, 16], key='surf_realizations')
         compare = st.checkbox('Compare ideal, individual features and combination', value=True, key='surf_compare')
-        st.caption('Start with one patch. Refine grid and padding to check convergence; more patches reduce speckle. '
-                   'The browser calculation can take time for large grids or many patches.')
+        st.caption('Progress and results appear directly below this button. Keep the tab open while it runs. '
+                   'Start with one patch; larger grids and more patches can take several minutes. '
+                   'Refine grid and padding to check convergence; more patches reduce speckle.')
         run = st.form_submit_button('Run surface simulation', type='primary')
     nx, ny = [int(s.strip()) for s in quality.split('×')]
     p = SurfaceParameters(width_enabled=width, width_distribution=distribution, width_cv=cv,
@@ -85,14 +88,38 @@ def render_surface_simulation(g, export_button):
                           seed=seed, nx=nx, ny=ny, padding=padding, realizations=realizations)
     signature = dict(geometry=asdict(g), surface=asdict(p), compare=compare)
     if run:
-        bar = st.progress(0., text='Calculating coherent surface scattering…')
+        started = perf_counter()
+        notice = st.empty()
+        notice.info('Running surface simulation… Progress updates below; results will appear here.')
+        bar = st.progress(0., text='Starting the calculation…')
+        # Stlite shares one Python event loop. Yield before and between FFTs
+        # so queued UI updates actually reach the page during the calculation.
+        await asyncio.sleep(.1)
+        steps = simulate_detector_steps(g, p, compare)
         try:
-            result = simulate_detector(g, p, compare, progress=lambda f: bar.progress(f))
+            while True:
+                try:
+                    update = next(steps)
+                except StopIteration as finished:
+                    result = finished.value
+                    break
+                elapsed = perf_counter() - started
+                bar.progress(update['fraction'], text=f"{update['fraction']:.0%} · {update['text']} · {elapsed:.0f} s elapsed")
+                await asyncio.sleep(.01)
             st.session_state.surface_result = result
             st.session_state.surface_signature = signature
+            st.session_state.surface_elapsed = perf_counter() - started
+            notice.empty()
         except (ValueError, MemoryError) as exc:
-            st.error(f'Cannot run these settings: {exc}')
+            notice.error(f'Cannot run these settings: {exc}. Try one patch and reduce grid size or FFT padding.')
+            return
+        except Exception as exc:
+            notice.error('The simulation failed. Try one patch and a smaller grid; the error details are below.')
+            with st.expander('Error details', expanded=True):
+                st.exception(exc)
+            return
         finally:
+            steps.close()
             bar.empty()
     if 'surface_result' not in st.session_state:
         st.info('Choose the features above, then click Run surface simulation.')
@@ -102,6 +129,11 @@ def render_surface_simulation(g, export_button):
         st.warning('Settings have changed since this result. Click Run surface simulation to update the maps and exports.')
     result = st.session_state.surface_result
     cases = result['cases']
+    elapsed = st.session_state.get('surface_elapsed', 0.)
+    st.success(f'Simulation complete — {len(cases)} case(s) calculated in {elapsed:.1f} s. Results are below.')
+    # Let the completion notice paint before preparing the figures and exports.
+    if run:
+        await asyncio.sleep(.1)
     selected = cases['Selected combination']['surface']
     for message in sorted({w for case in cases.values() for stats in case['statistics'] for w in stats['warnings']}):
         st.warning(message)

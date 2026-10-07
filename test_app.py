@@ -34,6 +34,7 @@ at.selectbox(key='surf_grid').select('256 × 128')
 [b for b in at.button if b.label=='Run surface simulation'][0].click().run(timeout=90)
 assert not at.exception, at.exception
 assert len(at.session_state.surface_result['cases']) == 5
+assert any('Simulation complete' in s.value for s in at.success)
 assert len(at.get('download_button')) == 4
 print('PASS surface comparison maps and exports')
 at.number_input(key='miscut').set_value(.15).run()
@@ -50,3 +51,14 @@ cases=at.session_state.surface_result['cases']
 assert list(cases)==['Ideal steps','Selected combination']
 np.testing.assert_array_equal(cases['Ideal steps']['intensity'],cases['Selected combination']['intensity'])
 print('PASS independent feature switches and ideal fallback')
+
+# A rejected run must show an error and must not report the old result as new.
+previous_signature = at.session_state.surface_signature
+at.selectbox(key='surf_grid').select('1024 × 512')
+at.selectbox(key='surf_padding').select(8)
+[b for b in at.button if b.label=='Run surface simulation'][0].click().run(timeout=30)
+assert not at.exception, at.exception
+assert any('FFT too large' in e.value for e in at.error)
+assert not any('Simulation complete' in s.value for s in at.success)
+assert at.session_state.surface_signature == previous_signature
+print('PASS invalid-run feedback and preservation of previous result')
