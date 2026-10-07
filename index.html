@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CTR Surface Simulator</title>
+  <meta name="description" content="Interactive Python simulator linking X-ray detector pixels, the Ewald sphere and crystal truncation rods.">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.css">
+  <style>html,body,#root{margin:0;min-height:100%;font-family:system-ui,sans-serif}#loading{margin:3rem auto;padding:2rem;max-width:650px;color:#24364b;line-height:1.6}#loading h1{margin-bottom:.3rem}#loading a{color:#176db5}</style>
+</head>
+<body>
+  <div id="root"><div id="loading"><h1>CTR Surface Simulator</h1><p>Loading the Python simulator in your browser. The first visit downloads the runtime and can take a minute.</p><p>No Python installation is required. Keep this tab open while the simulator loads.</p><p id="status" role="status">Starting…</p></div></div>
+  <noscript>This interactive simulator requires JavaScript and WebAssembly.</noscript>
+  <script type="module">
+    try {
+      const { mount } = await import("https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.js");
+      const files = {};
+      for (const filename of ["app.py", "physics.py", "plots.py", "surface_model.py", "surface_ui.py"]) {
+        const response = await fetch(new URL(filename + "?release=20261007-surface-1", location.href), {cache: "no-store"});
+        if (!response.ok) throw new Error(`Could not load ${filename}: HTTP ${response.status}`);
+        files[filename] = await response.text();
+      }
+      const probe = document.createElement('canvas');
+      const gl = probe.getContext('webgl2') || probe.getContext('webgl');
+      files['browser_capabilities.json'] = JSON.stringify({webgl: !!gl});
+      if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext();
+      mount({
+        entrypoint: "app.py",
+        files,
+        requirements: ["numpy", "plotly==7.1.0"],
+        streamlitConfig: {
+          "client.toolbarMode": "viewer",
+          "browser.gatherUsageStats": false,
+          "theme.base": "light",
+          "theme.primaryColor": "#16847d"
+        }
+      }, document.getElementById("root"));
+    } catch (error) {
+      const status = document.getElementById("status");
+      if (status) status.textContent = `Loading failed: ${error.message}. Please reload or check your connection.`;
+      console.error(error);
+    }
+  </script>
+</body>
+</html>
