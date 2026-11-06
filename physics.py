@@ -18,17 +18,17 @@ def rz(t):
 @dataclass(frozen=True)
 class Geometry:
     energy: float=10.16
-    a: float=3.905
-    alpha: float=4.481
+    a: float=3.858
+    alpha: float=4.2291
     phi: float=45.
-    miscut: float=0.10
-    elevation: float=8.962
+    miscut: float=0.15
+    elevation: float=8.661
     azimuth: float=0.
     roll: float=0.
-    distance: float=1000.
-    pitch: float=0.075
-    nx: int=256
-    ny: int=256
+    distance: float=1200.
+    pitch: float=0.055
+    nx: int=512
+    ny: int=800
     h: int=0
     k: int=0
     lmin: int=-2
@@ -141,8 +141,11 @@ def pixel_jacobian(g,u,v):
     return np.array(cols).T
 
 def preset(name):
+    if name=='Default geometry': return Geometry()
     a=3.905; energy=10.16; l=0.5
     if name=='Paper-like L=1.6': energy=15.5; l=1.6
     theta=float(np.rad2deg(np.arcsin(HC/energy*l/(2*a))))
     phi={'Across steps':0.,'Along steps':90.,'Oblique steps':45.,'Paper-like L=1.6':45.,'Flat surface':0.}[name]
-    return Geometry(energy=energy,alpha=theta,elevation=2*theta,phi=phi,miscut=0. if name=='Flat surface' else 0.10)
+    return Geometry(energy=energy,a=a,alpha=theta,elevation=2*theta,phi=phi,
+                    miscut=0. if name=='Flat surface' else 0.10,
+                    distance=1000.,pitch=.075,nx=256,ny=256)

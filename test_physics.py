@@ -14,7 +14,7 @@ class GeometryTests(unittest.TestCase):
     def test_specular_bragg_law(self):
         for E,L in [(10.16,.5),(15.5,1.6),(10.16,2.)]:
             theta=np.rad2deg(np.arcsin(HC/E*L/(2*3.905)))
-            g=Geometry(energy=E,alpha=theta,elevation=2*theta,phi=0.,miscut=0.)
+            g=Geometry(energy=E,a=3.905,alpha=theta,elevation=2*theta,phi=0.,miscut=0.)
             _,qc,_=pixel_q(g,0.,0.)
             np.testing.assert_allclose(qc*g.a/(2*np.pi),[0,0,L],atol=1e-12)
     def test_all_pixels_elastic(self):

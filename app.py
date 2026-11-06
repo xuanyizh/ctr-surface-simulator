@@ -44,7 +44,7 @@ async def main():
     st.markdown('''<style>.block-container{padding-top:1.4rem}h1{letter-spacing:-1px}
 [data-testid="stMetricValue"]{font-size:1.45rem}</style>''',unsafe_allow_html=True)
     if 'energy' not in st.session_state:
-        st.session_state.update(asdict(preset('Oblique steps')))
+        st.session_state.update(asdict(preset('Default geometry')))
 
     with st.sidebar:
         st.title('Geometry controls')
@@ -54,7 +54,7 @@ async def main():
         display_mode=st.selectbox('Diagram mode',['3D (rotate)','2D projections (no WebGL)'],index=0 if webgl else 1)
         if not webgl:
             st.caption('This browser cannot render WebGL. The 2D projections show the same geometry. Choose 3D in a WebGL-enabled browser.')
-        st.selectbox('Start with an example',['Oblique steps','Across steps','Along steps','Flat surface','Paper-like L=1.6'],key='preset_name')
+        st.selectbox('Start with an example',['Default geometry','Oblique steps','Across steps','Along steps','Flat surface','Paper-like L=1.6'],key='preset_name')
         st.button('Load example',on_click=apply_preset,width='stretch')
         st.caption('The paper-like example uses its energy and l; other settings are illustrative, not fitted experimental values.')
         with st.expander('Beam and crystal',expanded=True):

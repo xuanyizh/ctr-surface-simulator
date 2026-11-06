@@ -4,7 +4,7 @@ from physics import preset
 
 at=AppTest.from_file('app.py',default_timeout=30).run()
 assert not at.exception
-for name in ['Across steps','Along steps','Flat surface','Paper-like L=1.6','Oblique steps']:
+for name in ['Default geometry','Across steps','Along steps','Flat surface','Paper-like L=1.6','Oblique steps']:
     at.selectbox(key='preset_name').select(name).run()
     [b for b in at.button if b.label=='Load example'][0].click().run()
     assert not at.exception, at.exception
