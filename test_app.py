@@ -28,6 +28,25 @@ assert not at.exception
 assert any('not incident' in s.value for s in at.warning)
 print('PASS invalid incidence message')
 
+# Larger detector dimensions and shrinking after selecting the last row.
+[b for b in at.button if b.label=='Load example'][0].click().run()
+at.number_input(key='nx').set_value(512)
+at.number_input(key='ny').set_value(1536).run(timeout=60)
+assert not at.exception, at.exception
+at.slider(key='row_1536').set_value(1535).run(timeout=60)
+assert not at.exception, at.exception
+assert at.session_state.nx==512 and at.session_state.ny==1536
+at.number_input(key='nx').set_value(2048)
+at.number_input(key='ny').set_value(128).run(timeout=60)
+assert not at.exception, at.exception
+assert at.slider(key='row_128').value < 128
+at.checkbox(key='captured_rods_only').check().run()
+assert not at.exception, at.exception
+at.number_input(key='alpha').set_value(-10.).run()
+assert any('No rods in this family' in item.value for item in at.info)
+at.checkbox(key='captured_rods_only').uncheck()
+print('PASS larger detector dimensions, pixel selection and capture filter')
+
 # Nonideal forward controls run only on explicit form submission.
 [b for b in at.button if b.label=='Load example'][0].click().run()
 at.selectbox(key='surf_grid').select('256 × 128')

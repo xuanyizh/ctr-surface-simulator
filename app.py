@@ -69,8 +69,9 @@ async def main():
             st.number_input('Roll (deg)',min_value=-180.,max_value=180.,step=1.,key='roll')
             st.number_input('Sample-to-centre distance (mm)',min_value=20.,max_value=5000.,step=50.,key='distance')
             st.number_input('Pixel pitch (mm)',min_value=.01,max_value=1.,step=.005,format='%.4f',key='pitch')
-            st.select_slider('Columns',options=[128,256,384,512],key='nx')
-            st.select_slider('Rows',options=[128,256,384,512],key='ny')
+            st.number_input('Columns',min_value=2,max_value=2048,step=1,key='nx')
+            st.number_input('Rows',min_value=2,max_value=2048,step=1,key='ny')
+            st.caption('Up to 2048 pixels per axis. For a vertical 1536 × 512 detector, use 512 columns and 1536 rows. Larger images take more time and memory.')
         with st.expander('Rod family and teaching intensity'):
             st.number_input('Rod family h',min_value=-5,max_value=5,step=1,key='h')
             st.number_input('Rod family k',min_value=-5,max_value=5,step=1,key='k')
@@ -118,13 +119,18 @@ async def main():
             st.plotly_chart(ef,width='stretch')
         a,b=st.columns(2)
         with a:
-            zf=reciprocal(g,us,vs,True)
+            captured_only=st.checkbox('Show only rods captured by detector',key='captured_rods_only',
+                                      help='Keep rods whose Ewald-sphere intersection leaves the top surface and lands inside the detector. Applies only to this close-up.')
+            zf=reciprocal(g,us,vs,True,captured_only=captured_only)
             if display_mode.startswith('2D'): zf=project_2d(zf,title='3 | Reciprocal close-up: h–l projection',xlabel='h (r.l.u.)',ylabel='l (r.l.u.)',equal=False)
             st.plotly_chart(zf,width='stretch')
+            if captured_only and not any(r['status']=='Captured' for r in records):
+                st.info('No rods in this family intersect the detector in the current geometry.')
             if display_mode.startswith('2D'): st.caption('Projection only: overlap in h–l does not imply intersection in 3D; k must also match. Black markers are the actual 3D intersections.')
             st.caption('The close-up uses unequal axis scales so small miscut splitting is visible. Full Ewald view uses equal physical scales. Only the selected (h,k) rod family is shown.')
         with b:
             st.plotly_chart(detector(g,u,v,I,qcmap,us,vs,records,layer),width='stretch')
+            st.caption('Qx, Qy, Qz use the crystal [100], [010], [001] frame. The direction vectors are normalized local changes in Q at the green cross; they vary across the detector.')
             st.caption('Cyan circles: exact rod/sphere intersections. A geometric intersection can have negligible intensity. The image is a relative teaching model, not predicted counts. Detector row +v points upward here; camera files may use downward row indexing.')
     with tab2:
         st.subheader('Which sub-rods reach this detector?')

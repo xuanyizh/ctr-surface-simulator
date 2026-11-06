@@ -61,8 +61,9 @@ press Ctrl+C in the terminal. Windows 7 compatibility has not been tested.
   sample surface, step-edge direction, crystal axes, and flat detector plane.
 - Rotatable full Ewald sphere with ki, kf, q, reciprocal origin, primary Bragg
   points and the selected family's sub-rods.
-- Reciprocal-space close-up of the detector acceptance patch and intersections.
-- A detector image with exact geometric peak markers and hoverable h,k,l.
+- Reciprocal-space close-up with an optional **Show only rods captured by detector** filter (also works in 2D projection).
+- Detector dimensions from 2 to 2048 columns/rows, including 512 × 1536 with the long axis vertical.
+- A detector image with exact geometric peak markers, hoverable crystal Q and h,k,l, and horizontal/vertical unit directions in (Qx,Qy,Qz) at the selected pixel.
 - Linked pixel sliders: follow one pixel through all four views.
 - Coordinate maps of h, k and l, and a local detector-to-hkl derivative table.
 - Captured / missed intersection table; target hkl access check and one-button
@@ -79,6 +80,9 @@ Start with **Oblique steps**. Switch the detector colour map to **l**. Then
 compare **Across steps** with **Along steps**. Finally, try **Flat surface**.
 The row index increases upward in the simulator; raw camera arrays may need a
 vertical flip or detector-roll calibration before comparison.
+The Q-direction labels use crystal [100], [010], [001], not laboratory axes or
+the mean surface normal. They update with geometry and the selected pixel;
+they describe local changes in Q, not a constant-Q slice or absolute Q values.
 
 ## Essential distinction
 

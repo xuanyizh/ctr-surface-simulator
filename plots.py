@@ -1,6 +1,6 @@
 import numpy as np
 import plotly.graph_objects as go
-from physics import pixel_q
+from physics import pixel_q, pixel_jacobian, rod_intersections
 from plot_colors import MAGMA
 
 COLORS=['#1e88e5','#f4511e','#43a047','#8e24aa','#ffb300','#00acc1','#e53935','#3949ab','#6d4c41']
@@ -44,7 +44,7 @@ def real_space(g,u,v):
     arrow(f,D*n,D*n+.12*D*eu,'Detector +u','#c48c13'); arrow(f,D*n,D*n+.12*D*ev,'Detector +v','#ab6c10')
     return style3d(f,'1 | Real space: rays meet a flat detector','mm')
 
-def reciprocal(g,u,v,zoom=False):
+def reciprocal(g,u,v,zoom=False,captured_only=False):
     f=go.Figure(); q,qc,out=pixel_q(g,u,v); k=g.wavevector
     U,V=np.meshgrid(np.linspace(-g.nx*g.pitch/2,g.nx*g.pitch/2,20),np.linspace(-g.ny*g.pitch/2,g.ny*g.pitch/2,20))
     patch,_,_=pixel_q(g,U,V)
@@ -55,15 +55,17 @@ def reciprocal(g,u,v,zoom=False):
         dz=max(bounds[2][1]-bounds[2][0],.04)
         lo=bounds[2][0]-.25*dz; hi=bounds[2][1]+.25*dz
         ls=np.linspace(lo,hi,100)
+        rec=[r for r in rod_intersections(g) if r['status']=='Captured']
+        captured_labels={r['L'] for r in rec}
         labels=[0] if g.miscut==0 else range(g.lmin,g.lmax+1)
         for j,L in enumerate(labels):
+            if captured_only and L not in captured_labels:
+                continue
             h=g.h+np.tan(np.deg2rad(g.miscut))*(ls-L)
             pts=np.stack([h,np.full_like(ls,g.k),ls],axis=-1)
             line(f,pts,'Flat CTR' if g.miscut==0 else f'Sub-rod L={L}',COLORS[j%len(COLORS)],4)
         qq=qc*g.a/(2*np.pi)
         f.add_trace(go.Scatter3d(x=[qq[0]],y=[qq[1]],z=[qq[2]],mode='markers',marker=dict(size=6,color='#ff3355'),name='Selected pixel q'))
-        from physics import rod_intersections
-        rec=[r for r in rod_intersections(g) if r['status']=='Captured']
         if rec:
             pts=np.array([r['hkl'] for r in rec]); f.add_trace(go.Scatter3d(x=pts[:,0],y=pts[:,1],z=pts[:,2],mode='markers',marker=dict(size=4,color='black'),name='Captured intersections'))
         style3d(f,'3 | Reciprocal close-up: same detector patch','r.l.u.',False)
@@ -98,12 +100,27 @@ def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity'):
     hkl=qc*g.a/(2*np.pi)
     if layer=='Intensity': z=np.log10(np.maximum(I,1e-8)); scale=MAGMA; label='log10 relative intensity'; limits=dict(zmin=-6,zmax=0)
     else: z=hkl[...,{'h':0,'k':1,'l':2}[layer]]; scale='RdBu';label=layer+' (r.l.u.)';limits={}
-    f=go.Figure(go.Heatmap(x=u,y=v,z=z,customdata=hkl,colorscale=scale,colorbar=dict(title=label),hovertemplate='u=%{x:.3f} mm<br>v=%{y:.3f} mm<br>h=%{customdata[0]:.6f}<br>k=%{customdata[1]:.6f}<br>l=%{customdata[2]:.6f}<extra></extra>',**limits))
+    f=go.Figure(go.Heatmap(x=u,y=v,z=z,customdata=np.concatenate((hkl,qc),axis=-1),colorscale=scale,colorbar=dict(title=label),hovertemplate='u=%{x:.3f} mm<br>v=%{y:.3f} mm<br>h=%{customdata[0]:.6f}<br>k=%{customdata[1]:.6f}<br>l=%{customdata[2]:.6f}<br>Crystal Qx=%{customdata[3]:.6f} Å⁻¹<br>Crystal Qy=%{customdata[4]:.6f} Å⁻¹<br>Crystal Qz=%{customdata[5]:.6f} Å⁻¹<extra></extra>',**limits))
     rs=[r for r in records if r['status']=='Captured']
     if rs:
         f.add_trace(go.Scatter(x=[r['u'] for r in rs],y=[r['v'] for r in rs],mode='markers+text',text=[f"L={r['L']}" if g.miscut else 'CTR' for r in rs],textposition='top right',marker=dict(symbol='circle-open',color='#49deff',size=10),name='Geometric intersections'))
     f.add_trace(go.Scatter(x=[selected_u],y=[selected_v],mode='markers',marker=dict(symbol='cross',size=13,color='#53ffb6'),name='Selected pixel'))
-    f.update_layout(title='4 | Detector image: hover for h, k, l',height=490,xaxis_title='u (mm): detector columns increase →',yaxis_title='v (mm): detector rows increase ↑',margin=dict(l=30,r=20,t=50,b=40),legend=dict(orientation='h'),uirevision='detector',yaxis=dict(scaleanchor='x',scaleratio=1))
+    # Cubic hkl and crystal Q differ by one scalar, so normalized columns of
+    # the local Jacobian give the same directions in either coordinate system.
+    J=pixel_jacobian(g,selected_u,selected_v)
+    directions=J/np.linalg.norm(J,axis=0,keepdims=True)
+    directions=np.where(np.abs(directions)<.00005,0.,directions)
+    labels=['Crystal (Qx, Qy, Qz): unit directions at selected pixel']
+    for i,axis in enumerate(['x → / +column','y ↑ / +row']):
+        components=', '.join(f'{value:+.4f}' for value in directions[:,i])
+        labels.append(f'{axis}: ({components})')
+    f.update_layout(title=dict(text='4 | Detector image: hover for Q and h, k, l',y=.99),height=610,
+                    xaxis_title='Detector x / u (mm) →',yaxis_title='Detector y / v (mm) ↑',
+                    margin=dict(l=55,r=20,t=150,b=90),legend=dict(orientation='h',y=-.23),
+                    uirevision='detector',yaxis=dict(scaleanchor='x',scaleratio=1))
+    for i,text in enumerate(labels):
+        f.add_annotation(x=0,y=1.24-i*.08,xref='paper',yref='paper',text=text,
+                         showarrow=False,xanchor='left',yanchor='bottom',font=dict(size=12))
     return f
 
 def terraces(g):
