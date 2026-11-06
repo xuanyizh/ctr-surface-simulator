@@ -58,7 +58,7 @@ press Ctrl+C in the terminal. Windows 7 compatibility has not been tested.
 ## What you get
 
 The app starts with **Default geometry**: a = 3.858 Å, α = 4.2291°,
-miscut = 0.15°, δ = 8.661°, distance = 1200 mm, pixel pitch = 0.055 mm,
+miscut = 0.15°, δ = 8.661°, distance = 1700 mm, pixel pitch = 0.055 mm,
 and 512 columns × 800 rows. Energy remains 10.16 keV, φ = 45°, γ = 0°,
 and roll = 0°. Select **Default geometry** and click **Load example** to
 restore these settings. The five teaching examples retain their original geometry.

@@ -25,7 +25,7 @@ class Geometry:
     elevation: float=8.661
     azimuth: float=0.
     roll: float=0.
-    distance: float=1200.
+    distance: float=1700.
     pitch: float=0.055
     nx: int=512
     ny: int=800
