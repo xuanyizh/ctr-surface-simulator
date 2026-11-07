@@ -2,7 +2,7 @@
 import unittest
 from dataclasses import replace
 import numpy as np
-from physics import preset, rod_intersections, detector_image, pixel_q
+from physics import Geometry, preset, rod_intersections, detector_image, pixel_q
 from plots import reciprocal, detector, project_2d
 
 
@@ -34,8 +34,8 @@ class DetectorPlotTests(unittest.TestCase):
             g=replace(preset('Oblique steps'),nx=16,ny=16,roll=roll)
             u,v,I,_,qc=detector_image(g)
             fig=detector(g,u,v,I,qc,u0,v0,rod_intersections(g))
-            texts=[a.text for a in fig.layout.annotations]
-            self.assertIn('Crystal (Qx, Qy, Qz)',texts[0])
+            self.assertIn('Crystal (Qx, Qy, Qz)',fig.layout.annotations[0].text)
+            titles=[fig.layout.xaxis.title.text,fig.layout.yaxis.title.text]
             # Independently differentiate normalized outgoing rays analytically.
             n,eu,ev=g.basis
             r=g.distance*n+u0*eu+v0*ev
@@ -43,10 +43,49 @@ class DetectorPlotTests(unittest.TestCase):
             for i,e in enumerate([eu,ev]):
                 direction=(e-s*np.dot(s,e))@g.R
                 direction/=np.linalg.norm(direction)
-                displayed=np.fromstring(texts[i+1].split('(')[1].rstrip(')'),sep=',')
+                self.assertIn('(mm)',titles[i])
+                displayed=np.fromstring(titles[i].split('Q direction: (')[1].rstrip(')'),sep=',')
                 np.testing.assert_allclose(displayed,direction,atol=5.1e-5)
             np.testing.assert_allclose(np.asarray(fig.data[0].customdata)[...,3:],qc)
             np.testing.assert_allclose(np.asarray(fig.data[0].customdata)[...,:3],qc*g.a/(2*np.pi))
+
+    def test_peak_and_cursor_readouts_use_fractional_intersection_coordinates(self):
+        g=Geometry()
+        u,v,I,_,qc=detector_image(g)
+        records=rod_intersections(g)
+        captured=[r for r in records if r['status']=='Captured']
+        fig=detector(g,u,v,I,qc,u[10],v[20],records)
+        peaks=next(t for t in fig.data if t.name=='Peaks (H, K, L)')
+        self.assertEqual(len(peaks.x),3)
+        np.testing.assert_allclose(np.asarray(peaks.customdata)[:,:3],[r['hkl'] for r in captured])
+        np.testing.assert_allclose(np.asarray(peaks.customdata)[:,6],[r['L'] for r in captured])
+        for text,r in zip(peaks.text,captured):
+            displayed=np.fromstring(text.strip('()'),sep=',')
+            np.testing.assert_allclose(displayed,r['hkl'],atol=5.1e-5)
+            self.assertGreater(abs(displayed[2]-r['L']),.1)
+        selected=next(t for t in fig.data if t.name=='Selected pixel')
+        # Slider-selected point and image cell must agree, even under the cross.
+        np.testing.assert_allclose(selected.customdata[0],fig.data[0].customdata[20,10])
+        for trace in fig.data:
+            self.assertIn('(H, K, L)',trace.hovertemplate)
+            for i in range(6):
+                self.assertIn(f'customdata[{i}]',trace.hovertemplate)
+
+    def test_label_toggles_preserve_hover_and_empty_detector(self):
+        for name,alpha in [('Oblique steps',None),('Flat surface',None),('Oblique steps',-10.)]:
+            g=preset(name)
+            if alpha is not None: g=replace(g,alpha=alpha)
+            u,v,I,_,qc=detector_image(g)
+            fig=detector(g,u,v,I,qc,0.,0.,rod_intersections(g),layer='l',
+                         show_q_directions=False,label_peaks=False)
+            self.assertNotIn('Q direction',fig.layout.xaxis.title.text)
+            self.assertNotIn('Q direction',fig.layout.yaxis.title.text)
+            self.assertFalse(fig.layout.annotations)
+            np.testing.assert_allclose(fig.data[0].z,qc[...,2]*g.a/(2*np.pi))
+            for trace in fig.data[1:]:
+                self.assertEqual(trace.mode,'markers')
+                self.assertFalse(trace.text)
+                self.assertIn('(H, K, L)',trace.hovertemplate)
 
 
 if __name__=='__main__':

@@ -96,31 +96,50 @@ def reciprocal(g,u,v,zoom=False,captured_only=False):
     f.update_layout(scene=dict(xaxis=dict(range=[-2.1*k,.5*k]),yaxis=dict(range=[-1.2*k,1.2*k]),zaxis=dict(range=[-1.2*k,1.2*k])))
     return f
 
-def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity'):
+def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity',*,show_q_directions=True,label_peaks=True):
     hkl=qc*g.a/(2*np.pi)
     if layer=='Intensity': z=np.log10(np.maximum(I,1e-8)); scale=MAGMA; label='log10 relative intensity'; limits=dict(zmin=-6,zmax=0)
     else: z=hkl[...,{'h':0,'k':1,'l':2}[layer]]; scale='RdBu';label=layer+' (r.l.u.)';limits={}
-    f=go.Figure(go.Heatmap(x=u,y=v,z=z,customdata=np.concatenate((hkl,qc),axis=-1),colorscale=scale,colorbar=dict(title=label),hovertemplate='u=%{x:.3f} mm<br>v=%{y:.3f} mm<br>h=%{customdata[0]:.6f}<br>k=%{customdata[1]:.6f}<br>l=%{customdata[2]:.6f}<br>Crystal Qx=%{customdata[3]:.6f} Å⁻¹<br>Crystal Qy=%{customdata[4]:.6f} Å⁻¹<br>Crystal Qz=%{customdata[5]:.6f} Å⁻¹<extra></extra>',**limits))
+    # Use the same coordinate readout on the image and its marker overlays.
+    hover='<b>(H, K, L) = (%{customdata[0]:.6f}, %{customdata[1]:.6f}, %{customdata[2]:.6f})</b><br>u=%{x:.3f} mm, v=%{y:.3f} mm<br>Crystal Qx=%{customdata[3]:.6f} Å⁻¹<br>Crystal Qy=%{customdata[4]:.6f} Å⁻¹<br>Crystal Qz=%{customdata[5]:.6f} Å⁻¹'
+    f=go.Figure(go.Heatmap(x=u,y=v,z=z,customdata=np.concatenate((hkl,qc),axis=-1),colorscale=scale,colorbar=dict(title=label),hovertemplate=hover+'<extra></extra>',**limits))
     rs=[r for r in records if r['status']=='Captured']
     if rs:
-        f.add_trace(go.Scatter(x=[r['u'] for r in rs],y=[r['v'] for r in rs],mode='markers+text',text=[f"L={r['L']}" if g.miscut else 'CTR' for r in rs],textposition='top right',marker=dict(symbol='circle-open',color='#49deff',size=10),name='Geometric intersections'))
-    f.add_trace(go.Scatter(x=[selected_u],y=[selected_v],mode='markers',marker=dict(symbol='cross',size=13,color='#53ffb6'),name='Selected pixel'))
+        peak_hkl=np.array([r['hkl'] for r in rs])
+        # Suppress negative zero in the rounded labels, keeping full hover precision.
+        rounded=np.where(np.abs(peak_hkl)<.00005,0.,peak_hkl)
+        peak_text=['('+', '.join(f'{value:.4f}' for value in point)+')' for point in rounded]
+        parent='<br>Parent rod L=%{customdata[6]:.0f}' if g.miscut else '<br>Flat CTR'
+        f.add_trace(go.Scatter(x=[r['u'] for r in rs],y=[r['v'] for r in rs],
+                              mode='markers+text' if label_peaks else 'markers',
+                              text=peak_text if label_peaks else None,textposition='top center',
+                              textfont=dict(size=11,color='#49deff'),cliponaxis=False,
+                              customdata=np.column_stack((peak_hkl,peak_hkl*2*np.pi/g.a,[r['L'] for r in rs])),
+                              hovertemplate=hover+parent+'<extra>Captured peak</extra>',
+                              marker=dict(symbol='circle-open',color='#49deff',size=10),name='Peaks (H, K, L)'))
+    _,selected_q,_=pixel_q(g,selected_u,selected_v)
+    f.add_trace(go.Scatter(x=[selected_u],y=[selected_v],mode='markers',
+                          customdata=[np.concatenate((selected_q*g.a/(2*np.pi),selected_q))],
+                          hovertemplate=hover+'<extra>Selected pixel</extra>',
+                          marker=dict(symbol='cross',size=13,color='#53ffb6'),name='Selected pixel'))
     # Cubic hkl and crystal Q differ by one scalar, so normalized columns of
     # the local Jacobian give the same directions in either coordinate system.
-    J=pixel_jacobian(g,selected_u,selected_v)
-    directions=J/np.linalg.norm(J,axis=0,keepdims=True)
-    directions=np.where(np.abs(directions)<.00005,0.,directions)
-    labels=['Crystal (Qx, Qy, Qz): unit directions at selected pixel']
-    for i,axis in enumerate(['x → / +column','y ↑ / +row']):
-        components=', '.join(f'{value:+.4f}' for value in directions[:,i])
-        labels.append(f'{axis}: ({components})')
-    f.update_layout(title=dict(text='4 | Detector image: hover for Q and h, k, l',y=.99),height=610,
-                    xaxis_title='Detector x / u (mm) →',yaxis_title='Detector y / v (mm) ↑',
-                    margin=dict(l=55,r=20,t=150,b=90),legend=dict(orientation='h',y=-.23),
-                    uirevision='detector',yaxis=dict(scaleanchor='x',scaleratio=1))
-    for i,text in enumerate(labels):
-        f.add_annotation(x=0,y=1.24-i*.08,xref='paper',yref='paper',text=text,
-                         showarrow=False,xanchor='left',yanchor='bottom',font=dict(size=12))
+    axis_titles=['Detector x / u (mm) →','Detector y / v (mm) ↑']
+    if show_q_directions:
+        J=pixel_jacobian(g,selected_u,selected_v)
+        directions=J/np.linalg.norm(J,axis=0,keepdims=True)
+        directions=np.where(np.abs(directions)<.00005,0.,directions)
+        for i in range(2):
+            components=', '.join(f'{value:+.4f}' for value in directions[:,i])
+            axis_titles[i]+='<br>Q direction: ('+components+')'
+        f.add_annotation(x=0,y=1.06,xref='paper',yref='paper',
+                         text='Crystal (Qx, Qy, Qz): unit directions at green cross',
+                         showarrow=False,xanchor='left',yanchor='bottom',font=dict(size=11))
+    f.update_layout(title=dict(text='4 | Detector image: hover for H, K, L',y=.99),height=650,
+                    xaxis=dict(title=dict(text=axis_titles[0],font=dict(size=12)),automargin=True),
+                    yaxis=dict(title=dict(text=axis_titles[1],font=dict(size=12)),automargin=True,scaleanchor='x',scaleratio=1),
+                    margin=dict(l=90,r=20,t=100,b=125),legend=dict(orientation='h',y=-.25),
+                    hovermode='closest',uirevision='detector')
     return f
 
 def terraces(g):

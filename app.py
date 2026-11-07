@@ -129,8 +129,14 @@ async def main():
             if display_mode.startswith('2D'): st.caption('Projection only: overlap in h–l does not imply intersection in 3D; k must also match. Black markers are the actual 3D intersections.')
             st.caption('The close-up uses unequal axis scales so small miscut splitting is visible. Full Ewald view uses equal physical scales. Only the selected (h,k) rod family is shown.')
         with b:
-            st.plotly_chart(detector(g,u,v,I,qcmap,us,vs,records,layer),width='stretch')
+            show_q_directions=st.checkbox('Label detector axes in Qx, Qy, Qz',value=True,key='detector_q_labels',
+                                          help='Show each positive detector-axis direction as a unit vector in the crystal (Qx, Qy, Qz) frame, evaluated at the selected pixel. Axis positions remain in mm.')
+            label_peaks=st.checkbox('Label peaks with (H, K, L)',value=True,key='detector_peak_labels',
+                                    help='Label each captured rod intersection with its actual fractional reciprocal coordinates. Hover for more digits and the parent rod L.')
+            st.plotly_chart(detector(g,u,v,I,qcmap,us,vs,records,layer,
+                                    show_q_directions=show_q_directions,label_peaks=label_peaks),width='stretch')
             st.caption('Qx, Qy, Qz use the crystal [100], [010], [001] frame. The direction vectors are normalized local changes in Q at the green cross; they vary across the detector.')
+            st.caption('Hover anywhere on the image, a cyan peak, or the green cross to read (H, K, L) in reciprocal lattice units. Cyan labels give the intersection coordinates, which can be fractional; parent rod L is listed separately in the peak tooltip.')
             st.caption('Cyan circles: exact rod/sphere intersections. A geometric intersection can have negligible intensity. The image is a relative teaching model, not predicted counts. Detector row +v points upward here; camera files may use downward row indexing.')
     with tab2:
         st.subheader('Which sub-rods reach this detector?')

@@ -69,7 +69,8 @@ restore these settings. The five teaching examples retain their original geometr
   points and the selected family's sub-rods.
 - Reciprocal-space close-up with an optional **Show only rods captured by detector** filter (also works in 2D projection).
 - Detector dimensions from 2 to 2048 columns/rows, including 512 × 1536 with the long axis vertical.
-- A detector image with exact geometric peak markers, hoverable crystal Q and h,k,l, and horizontal/vertical unit directions in (Qx,Qy,Qz) at the selected pixel.
+- A detector image with **Label detector axes in Qx, Qy, Qz** and **Label peaks with (H, K, L)** checkboxes, both enabled by default. Axis labels show local unit directions at the selected pixel; cyan peak labels show the actual fractional intersection coordinates.
+- Cursor readout of (H, K, L) and crystal Q everywhere on the detector image, including peak markers and the selected pixel. Peak tooltips list the parent rod L separately from the intersection's L coordinate.
 - Linked pixel sliders: follow one pixel through all four views.
 - Coordinate maps of h, k and l, and a local detector-to-hkl derivative table.
 - Captured / missed intersection table; target hkl access check and one-button

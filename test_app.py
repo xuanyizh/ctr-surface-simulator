@@ -17,6 +17,17 @@ for layer in ['h','k','l','Intensity']:
     [s for s in at.selectbox if s.label=='Detector colour map'][0].select(layer).run()
     assert not at.exception
 print('PASS all detector map modes')
+assert at.checkbox(key='detector_q_labels').value
+assert at.checkbox(key='detector_peak_labels').value
+at.checkbox(key='detector_q_labels').uncheck()
+at.checkbox(key='detector_peak_labels').uncheck().run()
+assert not at.exception, at.exception
+assert not at.checkbox(key='detector_q_labels').value
+assert not at.checkbox(key='detector_peak_labels').value
+at.checkbox(key='detector_q_labels').check()
+at.checkbox(key='detector_peak_labels').check().run()
+assert not at.exception, at.exception
+print('PASS detector axis and peak label switches')
 at.number_input(key='target_l').set_value(1.).run()
 [b for b in at.button if b.label=='Align sample and detector centre to target'][0].click().run()
 assert not at.exception
