@@ -129,6 +129,27 @@ plane has its true dimensions; a separately labeled enlarged outline makes
 it visible at a metre-scale sample distance. The terrace cross-section uses
 real dimensions but greatly exaggerates the vertical plotting scale.
 
+### Incident angle versus crystal tilt
+
+Open **Incident angle ↔ crystal tilt α** in the sidebar for the equation and
+the current exact incident angle. **Understand the construction** also gives
+the inverse. The incidence θin is measured from the mean miscut surface:
+
+```text
+sin(θin) = sin(α) cos(μ) − cos(α) sin(μ) cos(φ)
+C = sqrt(cos²(μ) + sin²(μ) cos²(φ))
+β = atan2(sin(μ) cos(φ), cos(μ))
+α = β + asin(sin(θin) / C)
+```
+
+Here μ is the miscut and φ is the sample azimuth. Use degrees consistently.
+The inverse above is the usual grazing branch, −90° ≤ α − β ≤ 90°, and
+requires |sin(θin)| ≤ C; other orientations can have a second tilt solution.
+For small miscut and grazing incidence, α ≈ θin + μ cos(φ). With zero
+miscut, θin = α; at φ = 0° in the grazing geometry, θin = α − μ exactly.
+The defaults α = 4.2291°, μ = 0.15°, φ = 45° give θin = 4.1230°.
+Detector elevation δ does not enter this relationship.
+
 ## Physics scope: two intensity models
 
 **Linked views** retains the fast educational intensity described below.

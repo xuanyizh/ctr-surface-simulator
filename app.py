@@ -60,9 +60,16 @@ async def main():
         with st.expander('Beam and crystal',expanded=True):
             st.number_input('Energy (keV)',min_value=1.,max_value=50.,step=.1,key='energy')
             st.number_input('Cubic lattice a (Å)',min_value=2.,max_value=20.,step=.001,format='%.4f',key='a')
-            st.number_input('Crystal tilt α (deg)',min_value=-89.,max_value=89.,step=.01,format='%.4f',key='alpha',help='R = Ry(-α) Rz(φ). At φ=0 the incident beam crosses the step edges.')
+            st.number_input('Crystal tilt α (deg)',min_value=-89.,max_value=89.,step=.01,format='%.4f',key='alpha',help='R = Ry(-α) Rz(φ). The incident angle θin is measured from the mean surface: sin θin = sin α cos μ − cos α sin μ cos φ. For small miscut, α ≈ θin + μ cos φ. Open “Incident angle ↔ crystal tilt α” below for the equation and current value.')
             st.slider('Sample azimuth φ (deg)',-180.,180.,step=1.,key='phi',help='0°: scattering plane across steps. 90°: parallel to step edges, for detector azimuth 0°.')
             st.number_input('Miscut μ (deg)',min_value=0.,max_value=5.,step=.01,format='%.3f',key='miscut')
+        with st.expander('Incident angle ↔ crystal tilt α'):
+            st.caption('θin is the grazing angle to the mean surface; μ is the miscut and φ is the sample azimuth.')
+            st.latex(r'\begin{aligned}\sin\theta_{\rm in}&=\sin\alpha\cos\mu\\&\quad-\cos\alpha\sin\mu\cos\phi\end{aligned}')
+            st.caption('For small miscut and grazing incidence:')
+            st.latex(r'\alpha\simeq\theta_{\rm in}+\mu\cos\phi')
+            incidence_readout=st.empty()
+            st.caption('Angles are in degrees. The exact inverse is in “Understand the construction”.')
         with st.expander('Detector',expanded=True):
             st.number_input('Elevation δ (deg)',min_value=-179.,max_value=179.,step=.01,format='%.4f',key='elevation')
             st.number_input('Azimuth γ (deg)',min_value=-180.,max_value=180.,step=.1,key='azimuth')
@@ -83,6 +90,7 @@ async def main():
             st.caption('Only the selected (h,k) rod family is evaluated. Intensities exclude the common ideal-CTR factor and structure-factor extinctions.')
 
     g=Geometry(**{k:st.session_state[k] for k in asdict(Geometry())})
+    incidence_readout.caption(f'Current: α = {g.alpha:.4f}°, μ = {g.miscut:.3f}°, φ = {g.phi:.2f}° → θin = {g.incidence:.4f}° (exact).')
     u,v,I,qmap,qcmap=detector_image(g)
     records=rod_intersections(g)
     st.title('CTR Surface Simulator')
@@ -168,6 +176,17 @@ async def main():
         if 'target_message' in st.session_state: st.info(st.session_state.target_message)
         st.caption('The alignment button changes tilt, sample azimuth, detector elevation and detector azimuth. It does not change the selected rod family. It finds one simple orientation, not a full diffractometer motor solution.')
     with tab3:
+        st.subheader('Incident angle and crystal tilt α')
+        st.write('The incident angle θin is measured from the mean miscut surface. Crystal tilt α rotates the crystal frame; μ is the miscut and φ is the sample azimuth. With the simulator’s convention R = Ry(−α) Rz(φ), the exact relationship is:')
+        st.latex(r'\sin\theta_{\rm in}=\sin\alpha\cos\mu-\cos\alpha\sin\mu\cos\phi')
+        st.write('To calculate crystal tilt from a known incident angle, define:')
+        st.latex(r'C=\sqrt{\cos^2\mu+\sin^2\mu\cos^2\phi},\qquad \beta=\operatorname{atan2}(\sin\mu\cos\phi,\cos\mu)')
+        st.latex(r'\boxed{\alpha=\beta+\arcsin\!\left(\frac{\sin\theta_{\rm in}}{C}\right)}')
+        st.caption('This inverse uses the usual grazing-incidence branch, −90° ≤ α − β ≤ 90°, and requires |sin θin| ≤ C. Other orientations can have a second tilt solution. Evaluate trigonometric functions and inverse angles consistently in degrees.')
+        st.write('For small miscut and grazing incidence, the convenient approximation is:')
+        st.latex(r'\alpha\simeq\theta_{\rm in}+\mu\cos\phi')
+        st.write(f'Current geometry: α = {g.alpha:.4f}°, μ = {g.miscut:.3f}°, φ = {g.phi:.2f}° gives θin = **{g.incidence:.4f}°** using the exact equation.')
+        st.caption('For zero miscut, θin = α. At φ = 0° in the grazing geometry, θin = α − μ exactly. Detector elevation δ does not enter this incident-angle relationship.')
         st.markdown('''### 1. There are two different spaces
 The sample, incident beam and detector plane live in **real space**. Crystal truncation rods (CTRs), Bragg points and the Ewald sphere live in **reciprocal space**. A CTR is not a physical rod travelling toward the detector.
 
