@@ -71,6 +71,7 @@ restore these settings. The five teaching examples retain their original geometr
 - Detector dimensions from 2 to 2048 columns/rows, including 512 × 1536 with the long axis vertical.
 - A detector image with **Label detector axes in Qx, Qy, Qz** and **Label peaks with (H, K, L)** checkboxes, both enabled by default. Axis labels show local unit directions at the selected pixel; cyan peak labels show the actual fractional intersection coordinates.
 - Cursor readout of (H, K, L) and crystal Q everywhere on the detector image, including peak markers and the selected pixel. Peak tooltips list the parent rod L separately from the intersection's L coordinate.
+- A right-side **Y intensity profile** shows `I_y(v) = sum_u I(u, v)`: the sum of linear intensity over all detector columns for each row, in relative arbitrary units. It uses the exact same y-axis as the image, including zoom/pan, and keeps showing intensity when the image is switched to h, k or l. The profile is calculated before any logarithmic display transform; zooming does not change the integration width.
 - Linked pixel sliders: follow one pixel through all four views.
 - Coordinate maps of h, k and l, and a local detector-to-hkl derivative table.
 - Captured / missed intersection table; target hkl access check and one-button

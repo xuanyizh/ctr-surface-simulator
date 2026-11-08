@@ -16,7 +16,7 @@
       const { mount } = await import("https://cdn.jsdelivr.net/npm/@stlite/browser@1.9.2/build/stlite.js");
       const files = {};
       for (const filename of ["app.py", "physics.py", "plots.py", "surface_model.py", "surface_ui.py", "surface_plots.py", "plot_colors.py"]) {
-        const response = await fetch(new URL(filename + "?release=20261107-incidence-equation", location.href), {cache: "no-store"});
+        const response = await fetch(new URL(filename + "?release=20261108-detector-y-profile", location.href), {cache: "no-store"});
         if (!response.ok) throw new Error(`Could not load ${filename}: HTTP ${response.status}`);
         files[filename] = await response.text();
       }

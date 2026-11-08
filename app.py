@@ -143,6 +143,7 @@ async def main():
                                     help='Label each captured rod intersection with its actual fractional reciprocal coordinates. Hover for more digits and the parent rod L.')
             st.plotly_chart(detector(g,u,v,I,qcmap,us,vs,records,layer,
                                     show_q_directions=show_q_directions,label_peaks=label_peaks),width='stretch')
+            st.caption('Right: row-integrated intensity, Iᵧ(v) = Σᵤ I(u, v), summed across all columns before log scaling. The shared y-axis stays aligned during zoom; h/k/l maps keep the same intensity profile.')
             st.caption('Qx, Qy, Qz use the crystal [100], [010], [001] frame. The direction vectors are normalized local changes in Q at the green cross; they vary across the detector.')
             st.caption('Hover anywhere on the image, a cyan peak, or the green cross to read (H, K, L) in reciprocal lattice units. Cyan labels give the intersection coordinates, which can be fractional; parent rod L is listed separately in the peak tooltip.')
             st.caption('Cyan circles: exact rod/sphere intersections. A geometric intersection can have negligible intensity. The image is a relative teaching model, not predicted counts. Detector row +v points upward here; camera files may use downward row indexing.')

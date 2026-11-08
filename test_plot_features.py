@@ -67,6 +67,8 @@ class DetectorPlotTests(unittest.TestCase):
         # Slider-selected point and image cell must agree, even under the cross.
         np.testing.assert_allclose(selected.customdata[0],fig.data[0].customdata[20,10])
         for trace in fig.data:
+            if trace.name=='Y intensity profile':
+                continue
             self.assertIn('(H, K, L)',trace.hovertemplate)
             for i in range(6):
                 self.assertIn(f'customdata[{i}]',trace.hovertemplate)
@@ -80,12 +82,40 @@ class DetectorPlotTests(unittest.TestCase):
                          show_q_directions=False,label_peaks=False)
             self.assertNotIn('Q direction',fig.layout.xaxis.title.text)
             self.assertNotIn('Q direction',fig.layout.yaxis.title.text)
-            self.assertFalse(fig.layout.annotations)
+            self.assertFalse(any('Qx' in a.text for a in fig.layout.annotations))
             np.testing.assert_allclose(fig.data[0].z,qc[...,2]*g.a/(2*np.pi))
             for trace in fig.data[1:]:
+                if trace.name=='Y intensity profile':
+                    continue
                 self.assertEqual(trace.mode,'markers')
                 self.assertFalse(trace.text)
                 self.assertIn('(H, K, L)',trace.hovertemplate)
+
+    def test_y_profile_sums_linear_columns_and_shares_image_rows(self):
+        g=replace(Geometry(),nx=3,ny=4)
+        u,v,_,_,qc=detector_image(g)
+        # Unequal dimensions, an empty row and very weak values distinguish a
+        # row sum from a column sum, mean, log sum or display-floor clipping.
+        intensity=np.array([[1.,2.,4.],[0.,0.,0.],[1e-12,2e-12,3e-12],[.1,.2,.4]])
+        expected=[7.,0.,6e-12,.7]
+        for layer in ['Intensity','h','k','l']:
+            fig=detector(g,u,v,intensity,qc,0.,0.,[],layer=layer)
+            profile=next(t for t in fig.data if t.name=='Y intensity profile')
+            np.testing.assert_allclose(profile.x,expected,rtol=1e-14,atol=0.)
+            np.testing.assert_array_equal(profile.y,fig.data[0].y)
+            np.testing.assert_array_equal(profile.customdata,np.arange(g.ny))
+            self.assertEqual(profile.xaxis,'x2')
+            self.assertEqual(profile.yaxis,fig.data[0].yaxis or 'y')
+            self.assertGreater(fig.layout.xaxis2.domain[0],fig.layout.xaxis.domain[1])
+            self.assertEqual(fig.layout.yaxis.range,(-g.ny*g.pitch/2,g.ny*g.pitch/2))
+
+    def test_y_profile_empty_detector_stays_zero(self):
+        g=replace(Geometry(),nx=16,ny=24,alpha=-10.)
+        u,v,intensity,_,qc=detector_image(g)
+        fig=detector(g,u,v,intensity,qc,0.,0.,rod_intersections(g))
+        profile=next(t for t in fig.data if t.name=='Y intensity profile')
+        np.testing.assert_array_equal(profile.x,np.zeros(g.ny))
+        self.assertTrue(np.isfinite(profile.x).all())
 
 
 if __name__=='__main__':

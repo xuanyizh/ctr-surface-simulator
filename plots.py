@@ -102,7 +102,11 @@ def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity',*,show_q
     else: z=hkl[...,{'h':0,'k':1,'l':2}[layer]]; scale='RdBu';label=layer+' (r.l.u.)';limits={}
     # Use the same coordinate readout on the image and its marker overlays.
     hover='<b>(H, K, L) = (%{customdata[0]:.6f}, %{customdata[1]:.6f}, %{customdata[2]:.6f})</b><br>u=%{x:.3f} mm, v=%{y:.3f} mm<br>Crystal Qx=%{customdata[3]:.6f} Å⁻¹<br>Crystal Qy=%{customdata[4]:.6f} Å⁻¹<br>Crystal Qz=%{customdata[5]:.6f} Å⁻¹'
-    f=go.Figure(go.Heatmap(x=u,y=v,z=z,customdata=np.concatenate((hkl,qc),axis=-1),colorscale=scale,colorbar=dict(title=label),hovertemplate=hover+'<extra></extra>',**limits))
+    f=go.Figure(go.Heatmap(x=u,y=v,z=z,customdata=np.concatenate((hkl,qc),axis=-1),colorscale=scale,
+                         colorbar=dict(title=dict(text=label,side='top',font=dict(size=11)),orientation='h',
+                                       x=0,xanchor='left',y=1.02,yanchor='bottom',len=.66,
+                                       thickness=10,tickfont=dict(size=10)),
+                         hovertemplate=hover+'<extra></extra>',**limits))
     rs=[r for r in records if r['status']=='Captured']
     if rs:
         peak_hkl=np.array([r['hkl'] for r in rs])
@@ -122,6 +126,16 @@ def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity',*,show_q
                           customdata=[np.concatenate((selected_q*g.a/(2*np.pi),selected_q))],
                           hovertemplate=hover+'<extra>Selected pixel</extra>',
                           marker=dict(symbol='cross',size=13,color='#53ffb6'),name='Selected pixel'))
+    # Sum the linear intensity across every detector column, before the heatmap's
+    # log transform. Reuse the very same y axis so zoom, pan and aspect-ratio
+    # constraints cannot move the profile out of alignment with detector rows.
+    row_intensity=np.sum(I,axis=1)
+    f.add_trace(go.Scatter(x=row_intensity,y=v,xaxis='x2',yaxis='y',mode='lines',
+                          line=dict(color='#16847d',width=2),fill='tozerox',
+                          fillcolor='rgba(22,132,125,0.12)',showlegend=False,
+                          name='Y intensity profile',customdata=np.arange(len(v)),
+                          hovertemplate='Detector y / v=%{y:.3f} mm<br>Row=%{customdata:d} (0-based, upward)'
+                                        '<br>Σₓ I=%{x:.6g} a.u.<extra>All columns summed</extra>'))
     # Cubic hkl and crystal Q differ by one scalar, so normalized columns of
     # the local Jacobian give the same directions in either coordinate system.
     axis_titles=['Detector x / u (mm) →','Detector y / v (mm) ↑']
@@ -132,13 +146,22 @@ def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity',*,show_q
         for i in range(2):
             components=', '.join(f'{value:+.4f}' for value in directions[:,i])
             axis_titles[i]+='<br>Q direction: ('+components+')'
-        f.add_annotation(x=0,y=1.06,xref='paper',yref='paper',
+        f.add_annotation(x=0,y=1.20,xref='paper',yref='paper',
                          text='Crystal (Qx, Qy, Qz): unit directions at green cross',
                          showarrow=False,xanchor='left',yanchor='bottom',font=dict(size=11))
-    f.update_layout(title=dict(text='4 | Detector image: hover for H, K, L',y=.99),height=650,
-                    xaxis=dict(title=dict(text=axis_titles[0],font=dict(size=12)),automargin=True),
-                    yaxis=dict(title=dict(text=axis_titles[1],font=dict(size=12)),automargin=True,scaleanchor='x',scaleratio=1),
-                    margin=dict(l=90,r=20,t=100,b=125),legend=dict(orientation='h',y=-.25),
+    f.add_annotation(x=.87,y=1.02,xref='paper',yref='paper',text='Y profile',
+                     showarrow=False,yanchor='bottom',font=dict(size=12,color='#16847d'))
+    f.update_layout(title=dict(text='4 | Detector image: hover for H, K, L',y=.92,yanchor='top'),height=680,
+                    xaxis=dict(title=dict(text=axis_titles[0],font=dict(size=12)),automargin=True,
+                               domain=[0,.66],range=[-g.nx*g.pitch/2,g.nx*g.pitch/2],
+                               constrain='domain',constraintoward='right'),
+                    xaxis2=dict(title=dict(text='Σₓ I (a.u.)',font=dict(size=12)),domain=[.75,1],
+                                anchor='y',rangemode='tozero',automargin=True,nticks=3,
+                                exponentformat='e',showgrid=True,zeroline=True),
+                    yaxis=dict(title=dict(text=axis_titles[1],font=dict(size=12)),automargin=True,
+                               range=[-g.ny*g.pitch/2,g.ny*g.pitch/2],
+                               scaleanchor='x',scaleratio=1,constrain='domain'),
+                    margin=dict(l=90,r=20,t=140,b=125),legend=dict(orientation='h',y=-.25),
                     hovermode='closest',uirevision='detector')
     return f
 
