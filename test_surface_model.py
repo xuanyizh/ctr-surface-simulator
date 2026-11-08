@@ -4,6 +4,7 @@ import unittest
 from dataclasses import replace
 import numpy as np
 from physics import preset
+from detector_response import DetectorResponse
 from surface_model import SurfaceParameters, generate_surface, morphology_amplitude, simulate_detector
 
 
@@ -145,7 +146,7 @@ class SurfaceTests(unittest.TestCase):
 
     def test_ensemble_averages_intensity_not_amplitude(self):
         p = replace(self.p, realizations=2)
-        result = simulate_detector(self.g, p, compare=False)
+        result = simulate_detector(self.g, p, compare=False, response=DetectorResponse(subpixels=1))
         qc = result['q_crystal']
         amplitudes = [morphology_amplitude(generate_surface(self.g, p, j), qc, self.g, p.padding)[0] for j in range(2)]
         expected = np.where(result['physical'], np.mean(np.abs(amplitudes)**2, axis=0), 0.)

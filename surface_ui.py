@@ -3,12 +3,14 @@ import io
 import json
 import asyncio
 from time import perf_counter
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from surface_model import SurfaceParameters, simulate_detector_steps
 from surface_plots import surface_comparison
+from detector_response import DetectorResponse, SIGNAL_REFERENCE_SR, convergence_metrics
+from response_ui import response_caption, show_convergence
 
 
 
@@ -16,10 +18,12 @@ def export_npz(result, metadata):
     arrays = dict(metadata_json=np.array(json.dumps(metadata)),
                   u_mm=result['u_mm'], v_mm=result['v_mm'],
                   q_lab_Ainv=result['q_lab'], q_crystal_Ainv=result['q_crystal'],
-                  sampling_valid=result['sampling_valid'], physical=result['physical'])
+                  sampling_valid=result['sampling_valid'], physical=result['physical'],
+                  solid_angle_sr=result['solid_angle_sr'], signal_reference_sr=np.array(SIGNAL_REFERENCE_SR))
     names = list(result['cases'])
     arrays['case_names'] = np.array(names)
-    arrays['morphology_intensity'] = np.stack([result['cases'][n]['intensity'] for n in names])
+    for key in ('morphology_intensity', 'intrinsic_intensity', 'detector_signal'):
+        arrays[key] = np.stack([result['cases'][n][key] for n in names])
     arrays['height_uc_first_realization'] = np.stack([result['cases'][n]['surface'].height_uc for n in names])
     arrays['island_mask_first_realization'] = np.stack([result['cases'][n]['surface'].island_mask for n in names])
     for j, name in enumerate(names):
@@ -32,7 +36,8 @@ def export_npz(result, metadata):
     return buffer.getvalue()
 
 
-async def render_surface_simulation(g, export_button):
+async def render_surface_simulation(g, export_button, response=None, intensity_key='intrinsic_intensity'):
+    response = DetectorResponse() if response is None else response
     st.subheader('Build a surface and calculate its coherent scattering')
     st.write('Switch terrace-width variation, jagged edges and islands on independently. '
              'The comparison evaluates each enabled feature alone and their selected combination, '
@@ -69,6 +74,13 @@ async def render_surface_simulation(g, export_button):
         padding = c.selectbox('FFT padding', [2, 4, 8], index=1, key='surf_padding')
         realizations = d.selectbox('Independent patches', [1, 2, 4, 8, 16], key='surf_realizations')
         compare = st.checkbox('Compare ideal, individual features and combination', value=True, key='surf_compare')
+        check_pixels = st.checkbox('Check pixel integration with twice the sampling', value=False,
+                                   key='surf_check_pixels',
+                                   help='Also calculates a finer image using the same surfaces, seed and FFT grid. '
+                                        'Reports convergence; the displayed result keeps the selected sampling. '
+                                        'This adds roughly four times the usual calculation work.')
+        st.caption(f'Pixel integration: {response.subpixels} × {response.subpixels} samples per pixel. '
+                   'Use Intensity & detector response in the sidebar to change sampling and model factors.')
         st.caption('Progress and results appear directly below this button. Keep the tab open while it runs. '
                    'Start with one patch; larger grids and more patches can take several minutes. '
                    'Refine grid and padding to check convergence; more patches reduce speckle.')
@@ -79,7 +91,8 @@ async def render_surface_simulation(g, export_button):
                           edge_neighbor_correlation=neighbor, islands_enabled=islands,
                           island_coverage=coverage, island_radius_nm=radius, island_height_uc=height,
                           seed=seed, nx=nx, ny=ny, padding=padding, realizations=realizations)
-    signature = dict(geometry=asdict(g), surface=asdict(p), compare=compare)
+    signature = dict(geometry=asdict(g), surface=asdict(p), response=asdict(response),
+                     compare=compare, check_pixels=check_pixels)
     if run:
         started = perf_counter()
         notice = st.empty()
@@ -88,17 +101,29 @@ async def render_surface_simulation(g, export_button):
         # Stlite shares one Python event loop. Yield before and between FFTs
         # so queued UI updates actually reach the page during the calculation.
         await asyncio.sleep(.1)
-        steps = simulate_detector_steps(g, p, compare)
+        passes = [response] + ([replace(response,subpixels=response.subpixels*2)] if check_pixels else [])
+        steps = None
         try:
-            while True:
-                try:
-                    update = next(steps)
-                except StopIteration as finished:
-                    result = finished.value
-                    break
-                elapsed = perf_counter() - started
-                bar.progress(update['fraction'], text=f"{update['fraction']:.0%} · {update['text']} · {elapsed:.0f} s elapsed")
-                await asyncio.sleep(.01)
+            for pass_index, setting in enumerate(passes):
+                steps = simulate_detector_steps(g, p, compare, setting)
+                while True:
+                    try:
+                        update = next(steps)
+                    except StopIteration as finished:
+                        computed = finished.value
+                        break
+                    elapsed = perf_counter() - started
+                    fraction = (pass_index + update['fraction']) / len(passes)
+                    bar.progress(fraction, text=f"{fraction:.0%} · {setting.subpixels} × {setting.subpixels} · {update['text']} · {elapsed:.0f} s elapsed")
+                    await asyncio.sleep(.01)
+                if pass_index == 0:
+                    result = computed
+                else:
+                    result['convergence'] = {
+                        f'{name} / {key}': convergence_metrics(case[key],computed['cases'][name][key])
+                        for name,case in result['cases'].items()
+                        for key in ('intrinsic_intensity','detector_signal')}
+                    del computed
             st.session_state.surface_result = result
             st.session_state.surface_signature = signature
             st.session_state.surface_elapsed = perf_counter() - started
@@ -112,7 +137,8 @@ async def render_surface_simulation(g, export_button):
                 st.exception(exc)
             return
         finally:
-            steps.close()
+            if steps is not None:
+                steps.close()
             bar.empty()
     if 'surface_result' not in st.session_state:
         st.info('Choose the features above, then click Run surface simulation.')
@@ -122,8 +148,13 @@ async def render_surface_simulation(g, export_button):
         st.warning('Settings have changed since this result. Click Run surface simulation to update the maps and exports.')
     result = st.session_state.surface_result
     cases = result['cases']
+    saved_response = DetectorResponse(**saved['response'])
     elapsed = st.session_state.get('surface_elapsed', 0.)
     st.success(f'Simulation complete — {len(cases)} case(s) calculated in {elapsed:.1f} s. Results are below.')
+    st.caption(response_caption(saved_response,intensity_key))
+    if 'convergence' in result:
+        with st.expander('Pixel integration convergence results',expanded=True):
+            show_convergence(result['convergence'],saved_response.subpixels,saved_response.subpixels*2)
     # Let the completion notice paint before preparing the figures and exports.
     if run:
         await asyncio.sleep(.1)
@@ -133,7 +164,7 @@ async def render_surface_simulation(g, export_button):
         st.warning('No outgoing detector rays satisfy top-surface reflection in this geometry. The image is blank.')
     fraction = np.mean(result['sampling_valid'])
     if fraction < 1:
-        st.warning(f'{1 - fraction:.1%} of detector pixels lie outside this surface grid’s Fourier range. '
+        st.warning(f'{1 - fraction:.1%} of detector pixels contain unresolved physical subpixels outside this surface grid’s Fourier range. '
                    'They are blank / NaN, not zero intensity. Use a finer grid, a smaller patch (coherence), '
                    'or a narrower angular field of view.')
     st.subheader('Surface and detector comparison')
@@ -143,11 +174,13 @@ async def render_surface_simulation(g, export_button):
     detector_view = view_b.selectbox('Detector extent',
                                      ['Rod close-up (preview)', 'Full detector'], key='surf_view_detector')
     intensity_view = view_c.selectbox('Intensity colour range',
-                                      ['10⁻⁶ to 1 (preview)', '10⁻⁸ to 1'], key='surf_view_intensity')
-    log_floor = -6 if intensity_view.startswith('10⁻⁶') else -8
+                                      ['6 decades', '8 decades'], key='surf_view_intensity')
+    log_floor = -6 if intensity_view.startswith('6') else -8
     comparison = surface_comparison(result, saved['geometry'],
                                     central_surface=surface_view.startswith('Central'),
-                                    detector_closeup=detector_view.startswith('Rod'), log_floor=log_floor)
+                                    detector_closeup=detector_view.startswith('Rod'), log_floor=log_floor,
+                                    intensity_key=intensity_key,
+                                    intensity_label='Detector signal' if intensity_key=='detector_signal' else 'Intrinsic intensity')
     st.caption('Top: real-space height for the first coherent patch, with x across steps and y along steps. '
                'Bottom: coherent detector intensity. Each column is the same case in both spaces. '
                'Every height map shares one scale; every detector map shares one logarithmic intensity scale.')
@@ -162,7 +195,7 @@ async def render_surface_simulation(g, export_button):
                'Use the chart fullscreen button for a larger view. Changing these display controls reuses the calculated result.')
     st.caption('Grey detector pixels are outside the resolved Fourier range; dark pixels are low intensity. '
                'Values below the colour range use its darkest colour. Cyan circles are ideal reference rod centres. '
-               'M is a normalized same-material morphology factor, with the common material CTR factor omitted. '
+               'The displayed quantity follows the sidebar selection, with a shared scale across all cases. '
                'Individual-case intensities must not be added together.')
     with st.expander('Surface cross-section at y = 0'):
         fig = go.Figure()
@@ -185,16 +218,19 @@ async def render_surface_simulation(g, export_button):
     profile = go.Figure()
     valid_rows = np.any(result['sampling_valid'], axis=1)
     for name, case in cases.items():
-        values = np.nansum(case['intensity'], axis=1)
+        values = np.nansum(case[intensity_key], axis=1)
         values[~valid_rows] = np.nan
         profile.add_trace(go.Scatter(x=result['v_mm'], y=values, name=name))
     profile.update_layout(title='Row sums over resolved detector columns', xaxis_title='v (mm)',
-                          yaxis_title='Sum of morphology intensity', yaxis_type='log', height=360,
+                          yaxis_title='Sum of '+('detector signal' if intensity_key=='detector_signal' else 'intrinsic intensity'), yaxis_type='log', height=360,
                           legend=dict(orientation='h'))
     st.plotly_chart(profile, width='stretch')
     st.caption('Blank Fourier-range pixels are excluded from these row sums; all cases use exactly the same mask. '
+               'These are detector-coordinate profiles, not corrected intrinsic rod integrals. '
                'Cyan markers show ideal reference rods, not predictions of disordered-surface intensity maxima.')
-    metadata = dict(model='coherent_same_material_height_columns_v1', **saved,
+    metadata = dict(model='coherent_same_material_height_columns_v2', **saved,
+                    displayed_quantity=intensity_key, signal_reference_sr=SIGNAL_REFERENCE_SR,
+                    convergence=result.get('convergence'),
                     statistics={name: case['statistics'] for name, case in cases.items()})
     export_button('Download surface settings JSON', json.dumps(metadata, indent=2),
                   'surface_settings.json', 'application/json')
@@ -209,7 +245,9 @@ async def render_surface_simulation(g, export_button):
                  'Here independently sampled positive widths accumulate into a different step-position process; '
                  'the jagged edges have a finite correlation length, and islands are explicit. '
                  'The comparison maps are controlled numerical experiments, not the paper’s additive Ip/Iw/Is components.')
-        st.write('Same lattice and material for substrate and islands; no film structure factors, absorption, '
-                 'refraction, detector response or growth dynamics. Coherence is a Gaussian patch approximation. '
-                 'Detector pixels sample their centres; narrow peaks require checking detector pitch as well as the surface grid. '
+        st.write('Same lattice and material for substrate and islands; no atomic structure-factor database, absorption, '
+                 'refraction, efficiency calibration or growth dynamics. Coherence is a Gaussian patch approximation. '
+                 'Pixel integration, solid angle, optional polarization and the specified ideal column factor are included. '
+                 'No additional rod-interception multiplier is used: the finite-width scattering is already sampled on the Ewald sphere. '
+                 'Check subpixel sampling as well as surface grid and FFT padding. '
                  'For quantitative LNO/STO fitting, film/substrate amplitudes and instrument calibration must be added.')

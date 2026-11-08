@@ -1,5 +1,34 @@
 # Validation record
 
+## Detector response and finite pixels — 2026-11-08
+
+- Added midpoint pixel quadrature to both forward image modes and removed the
+  teaching image's isotropic Gaussian pixel blur. Pixel-centre HKL and exact
+  rod/sphere intersections remain unchanged.
+- Added separate intrinsic intensity, relative solid-angle-weighted detector
+  signal, optional scalar polarization and an optional damped constant-F column.
+  No universal rod-interception/rocking-scan multiplier is applied.
+- 48 numerical/plot tests pass, including 12 new response checks. Independent
+  references include an analytic rectangular solid angle (relative error below
+  10^-6 at 16 × 16 sampling), exact pixel-subdivision flux conservation, an erf
+  Gaussian integral, a direct complex column sum, and a real-space surface sum.
+- Existing application smoke tests pass for all presets, map modes, labels,
+  target alignment, large detectors, invalid incidence, surface comparisons,
+  exports and stale-result handling. New application tests exercise polarization,
+  complex column factors, both convergence checks, display-only switching and
+  response-change invalidation of previous surface results.
+- Default geometry, 2 × 2 versus 4 × 4: detector image L1 change 1.0998%; total
+  signal change 6.24e-9 relative; all pixels resolved. A higher sampling order
+  is appropriate for tighter image-shape accuracy. These numbers validate a
+  numerical refinement, not the sample model or the absolute count scale.
+- Browser preview renders the response controls, detector image/row profile,
+  and convergence result. The preview browser lacks WebGL; the existing 2D
+  fallback is used to inspect geometry views.
+- Remaining limits: unit detector efficiency, no absolute flux, no calibrated
+  absorption/footprint or instrumental resolution, no atomic structure-factor
+  database, no heteroepitaxial film interference or dynamical Bragg model.
+  See DETECTOR_RESPONSE.md for output units and convergence caveats.
+
 ## Preview colours and paired maps — 2026-10-07
 
 The old live SVG gradient began with rgb(255, 171, 171) instead of Magma's

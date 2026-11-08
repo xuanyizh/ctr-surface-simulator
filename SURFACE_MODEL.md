@@ -104,13 +104,18 @@ kinematic vertical amplitude away from a bulk Bragg singularity is
 
 `F(q) * exp(i*qz*a*n) / (1-exp(-i*qz*a))`.
 
-The common column factor is omitted, leaving the normalized lateral morphology
-amplitude
+Morphology-only mode omits the common column factor, leaving the normalized
+lateral morphology amplitude
 
 ```text
 S(q) = sum_j W_j exp{i[(qx-Gx)*x_j + (qy-Gy)*y_j + qz*a*n_j]} / sum_j W_j
 M(q) = |S(q)|²
 ```
+
+The optional damped column factor restores a constant-F ideal envelope before
+pixel integration. It accepts complex bulk/surface amplitudes and a
+phenomenological amplitude attenuation length. It does not supply atomic
+structure factors or a heteroepitaxial film model. See [DETECTOR_RESPONSE.md](DETECTOR_RESPONSE.md).
 
 `Gx=2*pi*h_family/a`, `Gy=2*pi*k_family/a`. The lateral grid is a coarse
 envelope near this selected reciprocal-lattice family, not an atomic lattice
@@ -150,21 +155,26 @@ exponent and matches descending +x steps and the existing rod geometry.
 
 Points outside the lateral FFT range are returned as NaN and shown blank,
 with an exported sampling-valid mask. They are not zero signal. Row sums omit
-these missing pixels and use the same mask for every case. Detector maps sample
-pixel centres: there is **no** pixel-area integration or PSF convolution.
-The teaching model's approximate pixel blur is not applied to this solver.
+these missing pixels and use the same mask for every case. Detector intensities
+are now integrated over midpoint subpixels (default 2 × 2), retaining each
+subpixel's full qx/qy/qz. Amplitudes are squared before averaging. If any physical
+subpixel is unresolved, its entire pixel is missing for all cases. Pixel-centre
+coordinates remain the HKL readout. There is no PSF convolution or extra Gaussian
+blur. Intrinsic intensity and solid-angle/polarization-weighted detector signal
+are exported separately, alongside the morphology-only average.
 
 Before interpreting weak diffuse scattering or speckle quantitatively:
 
 1. Increase surface grid resolution at fixed physical parameters and seed.
 2. Increase FFT padding (2, 4, 8) to check complex interpolation convergence.
-3. Check detector sampling relative to peak/speckle widths. A smaller detector
-   pitch changes the sampled field of view unless its dimensions also change.
+3. Use the pixel convergence check (n versus 2n samples per axis). Check
+   detector sampling relative to peak/speckle widths. A smaller detector pitch
+   changes the sampled field of view unless its dimensions also change.
 4. Check finite-patch and ensemble-size dependence. More patches smooth speckle;
    changing coherence changes the physical model, not just numerical accuracy.
 
 The UI limits FFT memory and height-level counts to keep browser runs bounded.
-CPU use scales with patches × cases × height levels × padded FFT size.
+Subpixels are streamed to limit memory; CPU use also grows with subpixel count.
 
 ## Interpretation and remaining scope
 
@@ -175,10 +185,11 @@ morphology change. A detector ROI does not select a unique real-space region.
 
 This is a forward **morphology** simulator. It does not predict absolute counts,
 film/substrate interference for different materials, atomic structure factors,
-Bragg enhancement, refraction, dynamical diffraction, absorption, polarization,
+quantitative Bragg intensities, refraction, dynamical diffraction, absorption,
 detector noise or temporal growth/XPCS dynamics. In particular, LNO islands on
 STO need separate material amplitudes before quantitative experimental fitting.
-The exact geometry engine is unchanged.
+Finite pixels, solid angle, optional polarization and an optional ideal column
+factor are implemented; the exact geometry engine is unchanged.
 
 ## Reproduce or extend in Python
 

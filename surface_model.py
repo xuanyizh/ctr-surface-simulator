@@ -7,6 +7,8 @@ SURFACE_MODEL.md. It is not an implementation of Petach Eqs. 12/22/26.
 from dataclasses import dataclass, replace
 import numpy as np
 from physics import pixel_q
+from detector_response import (DetectorResponse, pixel_offsets, sample_factors,
+                               solid_angle_density)
 
 
 @dataclass(frozen=True)
@@ -279,30 +281,41 @@ def comparison_cases(p, compare=True):
     return cases
 
 
-def simulate_detector(g, p=SurfaceParameters(), compare=True, progress=None):
+def simulate_detector(g, p=SurfaceParameters(), compare=True, progress=None, response=None):
     """Synchronous API; progress receives a fraction between zero and one."""
     callback = (lambda update: progress(update['fraction'])) if progress is not None else None
-    return _consume_steps(simulate_detector_steps(g, p, compare), callback)
+    return _consume_steps(simulate_detector_steps(g, p, compare, response), callback)
 
 
-def simulate_detector_steps(g, p=SurfaceParameters(), compare=True):
+def simulate_detector_steps(g, p=SurfaceParameters(), compare=True, response=None):
     """Coherent patches; independent realizations are averaged as intensities.
 
-    Pixel centres use the existing exact elastic geometry. No pixel blur or
-    pixel-area integration is implicit. No independently normalized maps.
+    Midpoint subpixels follow exact elastic geometry. Intensities, not complex
+    amplitudes, are integrated over pixels. No independently normalized maps.
+    Subpixels are streamed to bound memory in the browser.
     """
     p.validate()
+    response = DetectorResponse() if response is None else response
+    offsets = pixel_offsets(response)
     u = (np.arange(g.nx) - (g.nx - 1) / 2) * g.pitch
     v = (np.arange(g.ny) - (g.ny - 1) / 2) * g.pitch
     U, V = np.meshgrid(u, v)
     qlab, qc, out = pixel_q(g, U, V)
-    physical = (out @ g.normal > 0) & (g.incidence > 0)
+    physical = np.zeros(U.shape, dtype=bool)
+    valid_all = np.ones(U.shape, dtype=bool)
+    omega = np.zeros(U.shape)
+    for du, dv in offsets:
+        us, vs = U + du * g.pitch, V + dv * g.pitch
+        physical |= (pixel_q(g, us, vs)[2] @ g.normal > 0) & (g.incidence > 0)
+        omega += g.pitch**2 * solid_angle_density(g, us, vs) / len(offsets)
     results = {}
     cases = comparison_cases(p, compare)
     completed = 0
-    total = len(cases) * p.realizations
+    total = len(cases) * p.realizations * len(offsets)
     for name, params in cases.items():
         intensity = np.zeros(U.shape)
+        morphology = np.zeros(U.shape)
+        signal = np.zeros(U.shape)
         first = None
         statistics = []
         for j in range(p.realizations):
@@ -311,18 +324,32 @@ def simulate_detector_steps(g, p=SurfaceParameters(), compare=True):
             surface = generate_surface(g, params, j)
             if first is None:
                 first = surface
-            steps = _morphology_amplitude_steps(surface, qc, g, p.padding)
-            while True:
-                try:
-                    level, levels = next(steps)
-                except StopIteration as finished:
-                    amplitude, valid = finished.value
-                    break
-                yield dict(fraction=(completed + level / levels) / total,
-                           text=f'{stage} · height {level}/{levels}')
-            intensity += np.where(physical, np.abs(amplitude)**2, 0.) / p.realizations
+            for index, (du, dv) in enumerate(offsets):
+                us, vs = U + du * g.pitch, V + dv * g.pitch
+                _, points, directions = pixel_q(g, us, vs)
+                sample_physical, column, weight = sample_factors(g, response, us, vs, points, directions)
+                steps = _morphology_amplitude_steps(surface, points, g, p.padding)
+                while True:
+                    try:
+                        level, levels = next(steps)
+                    except StopIteration as finished:
+                        amplitude, valid = finished.value
+                        break
+                    yield dict(fraction=(completed + level / levels) / total,
+                               text=f'{stage} · subpixel {index + 1}/{len(offsets)} · height {level}/{levels}')
+                valid_all &= valid | ~sample_physical
+                value = np.where(sample_physical, np.abs(amplitude)**2, 0.)
+                normalization = p.realizations * len(offsets)
+                morphology += value / normalization
+                intensity += value * column / normalization
+                signal += value * column * weight / normalization
+                completed += 1
             statistics.append(surface.stats)
-            completed += 1
-        results[name] = dict(intensity=intensity, surface=first, statistics=statistics)
+        results[name] = dict(intensity=intensity, intrinsic_intensity=intensity,
+                             morphology_intensity=morphology, detector_signal=signal,
+                             surface=first, statistics=statistics)
+    for case in results.values():
+        for key in ('intensity', 'intrinsic_intensity', 'morphology_intensity', 'detector_signal'):
+            case[key][~valid_all] = np.nan
     return dict(u_mm=u, v_mm=v, q_lab=qlab, q_crystal=qc,
-                sampling_valid=valid, physical=physical, cases=results)
+                solid_angle_sr=omega, sampling_valid=valid_all, physical=physical, cases=results)

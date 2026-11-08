@@ -4,12 +4,16 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from physics import Geometry, rod_intersections
 from plot_colors import MAGMA, VIRIDIS
+from detector_response import log_upper_limit
 
 
 def surface_comparison(result, geometry, central_surface=True,
-                       detector_closeup=True, log_floor=-6):
+                       detector_closeup=True, log_floor=-6, intensity_key='intensity',
+                       intensity_label='Morphology intensity M'):
     cases = result['cases']
     names = list(cases)
+    log_max = log_upper_limit([case[intensity_key] for case in cases.values()])
+    log_floor += log_max
     fig = make_subplots(rows=2, cols=len(names), subplot_titles=names + [''] * len(names),
                         horizontal_spacing=.035, vertical_spacing=.16)
     crops = []
@@ -32,14 +36,14 @@ def surface_comparison(result, geometry, central_surface=True,
             x=x, y=y, z=heights, coloraxis='coloraxis', zsmooth=False,
             name=name, hovertemplate='x=%{x:.1f} nm<br>y=%{y:.1f} nm<br>Height=%{z:d} uc<extra>%{fullData.name}</extra>'),
             row=1, col=column)
-        intensity = case['intensity']
+        intensity = case[intensity_key]
         log_intensity = np.log10(np.maximum(intensity, 1e-300))
         log_intensity = np.where(result['sampling_valid'], log_intensity, np.nan)
         fig.add_trace(go.Heatmap(
             x=u, y=v, z=log_intensity, coloraxis='coloraxis2', name=name,
             zsmooth=False, connectgaps=False, hoverongaps=False,
             customdata=np.concatenate((intensity[..., None], hkl), axis=-1),
-            hovertemplate='u=%{x:.3f} mm<br>v=%{y:.3f} mm<br>M=%{customdata[0]:.3e}'
+            hovertemplate='u=%{x:.3f} mm<br>v=%{y:.3f} mm<br>'+intensity_label+'=%{customdata[0]:.3e}'
                           '<br>h=%{customdata[1]:.6f}<br>k=%{customdata[2]:.6f}'
                           '<br>l=%{customdata[3]:.6f}<extra>%{fullData.name}</extra>'),
             row=2, col=column)
@@ -54,15 +58,15 @@ def surface_comparison(result, geometry, central_surface=True,
                          row=2, col=column, nticks=3)
         fig.update_yaxes(title_text='v (mm)' if column == 1 else None,
                          range=[-v_limit, v_limit], row=2, col=column, nticks=5)
-    exponents = list(range(log_floor, 1))
+    exponents = list(range(log_floor, log_max+1))
     fig.update_layout(
         template='plotly_white', height=740, margin=dict(l=55, r=100, t=55, b=50),
         paper_bgcolor='white', plot_bgcolor='#dce1e8', font=dict(color='#24364b', size=11),
         coloraxis=dict(colorscale=VIRIDIS, cmin=-height_limit, cmax=height_limit,
                        colorbar=dict(title=dict(text='Height (uc)', side='right'),
                                      x=1.02, y=.79, len=.42, thickness=14)),
-        coloraxis2=dict(colorscale=MAGMA, cmin=log_floor, cmax=0,
-                        colorbar=dict(title=dict(text='Morphology intensity M', side='right'),
+        coloraxis2=dict(colorscale=MAGMA, cmin=log_floor, cmax=log_max,
+                        colorbar=dict(title=dict(text=intensity_label, side='right'),
                                       tickvals=exponents,
                                       ticktext=[f'10<sup>{n}</sup>' for n in exponents],
                                       x=1.02, y=.21, len=.42, thickness=14)),

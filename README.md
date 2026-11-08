@@ -16,9 +16,9 @@ at the surface/amplitude level. Reproduce with `python compare_surfaces.py`
 
 The website includes this two-row comparison: a real-space height map above
 the detector image for every case. It uses the preview's Viridis/Magma palettes
-and a shared intensity range of 10⁻⁶ to 1. Display controls switch between the
-central crop and full surface, the rod close-up and full detector, or a wider
-10⁻⁸ to 1 colour range, using the existing simulation result.
+and a shared logarithmic intensity scale. Display controls switch between the
+central crop and full surface, the rod close-up and full detector, and six or
+eight decades of intensity, using the existing simulation result.
 
 ## GitHub Pages deployment
 
@@ -31,7 +31,8 @@ before closing the tab.
 
 Publish the root of `main` using GitHub Pages. The deployed files are
 `index.html`, `app.py`, `physics.py`, `plots.py`, `surface_model.py`,
-`surface_ui.py`, `surface_plots.py`, and `plot_colors.py`. The desktop Python source
+`surface_ui.py`, `surface_plots.py`, `plot_colors.py`, `detector_response.py`,
+and `response_ui.py`. The desktop Python source
 uses the same geometry engine. Browser runtime: @stlite/browser 1.9.2.
 
 Browsers without WebGL automatically use 2D projections. The sidebar
@@ -79,6 +80,11 @@ restore these settings. The five teaching examples retain their original geometr
 - Five examples: oblique, across steps, along steps, flat, and paper-like L=1.6.
 - Geometry JSON and detector maps NPZ export, and geometry JSON import.
 - A built-in explanation, coordinate conventions, equations and limitations.
+- Shared **Intensity & detector response** controls: intrinsic pixel averages
+  or relative detector signal; finite-pixel quadrature (default 2 × 2), exact
+  solid-angle density, optional polarization and a damped ideal column factor.
+  Both image modes have pixel-integration convergence checks. See
+  [Detector response](DETECTOR_RESPONSE.md) for definitions and limitations.
 - Explicit nonideal height maps: gamma/lognormal/truncated-normal widths,
   correlated noncrossing jagged edges, and same-material circular islands.
 - Ideal/individual/combined detector comparisons on one shared scale, independent
@@ -171,11 +177,12 @@ weighted by the per-sub-rod relative factor in the paper's Eq. (17):
 
     w_L(l) = sinc(l-L)^2 exp[-(2π(l-L) σ_total/w)^2]
 
-NumPy's sinc(x)=sin(πx)/(πx) is used. The common ideal-CTR intensity I0 is omitted,
-so the image **does not compare absolute Bragg and anti-Bragg intensities**.
-The Gaussian widths are set by inverse coherence, combined with an isotropic
-approximation to pixel blur k*pitch/(sqrt(12)*distance). This is not exact pixel
-integration, and very narrow, under-resolved rods need a finer model. At zero
+NumPy's sinc(x)=sin(πx)/(πx) is used. Morphology-only mode omits the common
+ideal-CTR intensity I0. An optional damped column factor adds a user-specified
+constant-F kinematic envelope; it is not a material-specific absolute intensity.
+The Gaussian widths are set only by inverse coherence. Pixel intensities are
+integrated with midpoint subpixel quadrature; the former isotropic Gaussian
+pixel blur is removed. Check convergence for narrow, under-resolved rods. At zero
 miscut one Gaussian rod replaces all coincident sub-rods. The envelope for
 non-specular families is illustrative. Peak centres are independent of this
 brightness approximation and follow the exact geometry.
@@ -184,7 +191,7 @@ This is a simplified Ip-like model. It does not implement the full Eq. (12),
 broad Iw from width fluctuations (Eq. 22), or diffuse Is from jagged edges
 (Eq. 26). Thus changing the total roughness only damps distant-parent rods;
 it does not redistribute the lost intensity into the omitted components.
-No quantitative LaNiO3/SrTiO3 film structure factors, thickness fringes,
+No quantitative LaNiO3/SrTiO3 atomic structure factors, thickness fringes,
 strain gradients, speckles or growth/XPCS time correlations are predicted.
 Different q values select different Fourier components, not unique real-space
 patches or a unique island size.

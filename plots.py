@@ -96,9 +96,9 @@ def reciprocal(g,u,v,zoom=False,captured_only=False):
     f.update_layout(scene=dict(xaxis=dict(range=[-2.1*k,.5*k]),yaxis=dict(range=[-1.2*k,1.2*k]),zaxis=dict(range=[-1.2*k,1.2*k])))
     return f
 
-def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity',*,show_q_directions=True,label_peaks=True):
+def detector(g,u,v,I,qc,selected_u,selected_v,records,layer='Intensity',*,show_q_directions=True,label_peaks=True,intensity_label='relative intensity',log_max=0):
     hkl=qc*g.a/(2*np.pi)
-    if layer=='Intensity': z=np.log10(np.maximum(I,1e-8)); scale=MAGMA; label='log10 relative intensity'; limits=dict(zmin=-6,zmax=0)
+    if layer=='Intensity': z=np.log10(np.maximum(I,1e-300)); scale=MAGMA; label='log10 '+intensity_label; limits=dict(zmin=log_max-6,zmax=log_max)
     else: z=hkl[...,{'h':0,'k':1,'l':2}[layer]]; scale='RdBu';label=layer+' (r.l.u.)';limits={}
     # Use the same coordinate readout on the image and its marker overlays.
     hover='<b>(H, K, L) = (%{customdata[0]:.6f}, %{customdata[1]:.6f}, %{customdata[2]:.6f})</b><br>u=%{x:.3f} mm, v=%{y:.3f} mm<br>Crystal Qx=%{customdata[3]:.6f} Å⁻¹<br>Crystal Qy=%{customdata[4]:.6f} Å⁻¹<br>Crystal Qz=%{customdata[5]:.6f} Å⁻¹'

@@ -5,12 +5,18 @@ import json
 import sys
 import base64
 from pathlib import Path
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import numpy as np
 import streamlit as st
-from physics import Geometry, HC, preset, pixel_q, detector_image, rod_intersections, pixel_jacobian, project_direction
+from physics import Geometry, HC, preset, pixel_q, detector_calculation, rod_intersections, pixel_jacobian, project_direction
+from detector_response import convergence_metrics, SIGNAL_REFERENCE_SR
+from response_ui import response_controls, response_caption, show_convergence, log_upper_limit
 from plots import real_space, reciprocal, detector, terraces, project_2d
 from surface_ui import render_surface_simulation
+
+@st.cache_data(max_entries=2, show_spinner=False)
+def calculate_linked(g, response):
+    return detector_calculation(g, response)
 
 def export_button(label, data, filename, mime):
     if sys.platform == 'emscripten':
@@ -87,11 +93,15 @@ async def main():
             st.number_input('Across-step coherence ξx (µm)',min_value=.01,max_value=10.,step=.1,key='coherence_x')
             st.number_input('Along-step coherence ξy (µm)',min_value=.01,max_value=10.,step=.1,key='coherence_y')
             st.slider('Total terrace roughness σ / width',0.,.4,step=.01,key='roughness')
-            st.caption('Only the selected (h,k) rod family is evaluated. Intensities exclude the common ideal-CTR factor and structure-factor extinctions.')
+            st.caption('Only the selected (h,k) rod family is evaluated. The optional column factor is set below; material-specific extinctions are not supplied.')
+        response, intensity_key = response_controls()
 
     g=Geometry(**{k:st.session_state[k] for k in asdict(Geometry())})
     incidence_readout.caption(f'Current: α = {g.alpha:.4f}°, μ = {g.miscut:.3f}°, φ = {g.phi:.2f}° → θin = {g.incidence:.4f}° (exact).')
-    u,v,I,qmap,qcmap=detector_image(g)
+    calculation=calculate_linked(g,response)
+    u,v=calculation['u_mm'],calculation['v_mm']
+    I=calculation[intensity_key]
+    qmap,qcmap=calculation['q_lab'],calculation['q_crystal']
     records=rod_intersections(g)
     st.title('CTR Surface Simulator')
     st.markdown('**Follow one detector pixel from a real-space ray to a reciprocal-space point.** Rotate the 3D views with the mouse; use the pixel controls to move the green cross.')
@@ -114,7 +124,7 @@ async def main():
 
     tab1,tab_surface,tab2,tab3,tab4=st.tabs(['Linked views','Surface forward simulation','Peak access & axes','Understand the construction','Save / model notes'])
     with tab_surface:
-        await render_surface_simulation(g, export_button)
+        await render_surface_simulation(g, export_button, response, intensity_key)
     with tab1:
         a,b=st.columns(2)
         with a:
@@ -142,11 +152,26 @@ async def main():
             label_peaks=st.checkbox('Label peaks with (H, K, L)',value=True,key='detector_peak_labels',
                                     help='Label each captured rod intersection with its actual fractional reciprocal coordinates. Hover for more digits and the parent rod L.')
             st.plotly_chart(detector(g,u,v,I,qcmap,us,vs,records,layer,
-                                    show_q_directions=show_q_directions,label_peaks=label_peaks),width='stretch')
+                                    show_q_directions=show_q_directions,label_peaks=label_peaks,
+                                    intensity_label='detector signal' if intensity_key=='detector_signal' else 'intrinsic intensity',
+                                    log_max=log_upper_limit([I])),width='stretch')
+            st.caption(response_caption(response,intensity_key))
+            with st.expander('Pixel integration convergence'):
+                st.caption('Compare the current integration with twice as many samples per axis. '
+                           'The displayed image keeps the selected sampling setting.')
+                if st.button('Check linked-image convergence',key='linked_convergence'):
+                    fine=calculate_linked(g,replace(response,subpixels=response.subpixels*2))
+                    st.session_state.linked_convergence_result=dict(
+                        signature=(asdict(g),asdict(response)),
+                        metrics={key:convergence_metrics(calculation[key],fine[key])
+                                 for key in ('intrinsic_intensity','detector_signal')})
+                checked=st.session_state.get('linked_convergence_result')
+                if checked and checked['signature']==(asdict(g),asdict(response)):
+                    show_convergence(checked['metrics'],response.subpixels,response.subpixels*2)
             st.caption('Right: row-integrated intensity, Iᵧ(v) = Σᵤ I(u, v), summed across all columns before log scaling. The shared y-axis stays aligned during zoom; h/k/l maps keep the same intensity profile.')
             st.caption('Qx, Qy, Qz use the crystal [100], [010], [001] frame. The direction vectors are normalized local changes in Q at the green cross; they vary across the detector.')
             st.caption('Hover anywhere on the image, a cyan peak, or the green cross to read (H, K, L) in reciprocal lattice units. Cyan labels give the intersection coordinates, which can be fractional; parent rod L is listed separately in the peak tooltip.')
-            st.caption('Cyan circles: exact rod/sphere intersections. A geometric intersection can have negligible intensity. The image is a relative teaching model, not predicted counts. Detector row +v points upward here; camera files may use downward row indexing.')
+            st.caption('Cyan circles: exact rod/sphere intersections. A geometric intersection can have negligible intensity. The underlying rod profiles are a teaching approximation. Detector row +v points upward here; camera files may use downward row indexing.')
     with tab2:
         st.subheader('Which sub-rods reach this detector?')
         st.write('Each row is one mathematical rod/sphere intersection. Only rays leaving the top surface and landing inside the detector are marked Captured. Bulk Bragg peaks additionally require integer h,k,l and a nonzero structure factor.')
@@ -212,7 +237,7 @@ First intersect the rods with the Ewald sphere. Then extend the corresponding ou
 4. Increase miscut: terraces narrow and sub-rods separate further in reciprocal space. Increase distance: the same angular separation spans more millimetres and pixels.
 5. Load **Flat surface**: the sub-rods collapse onto one CTR. All parent L labels refer to the same line.
 6. Increase teaching roughness: distant-parent sub-rods weaken in the linked-view model. Open **Surface forward simulation** to explicitly generate width disorder, jagged edges and islands, and compare their scattering.
-7. Set target (0,0,1), align, and compare with (0,0,0.5). This demonstrates geometric Bragg and anti-Bragg access; the image is normalized and does not represent their enormous absolute intensity difference.
+7. Set target (0,0,1), align, and compare with (0,0,0.5). Morphology-only mode omits Bragg enhancement. The optional ideal column factor adds a damped kinematic CTR envelope; quantitative Bragg intensities still require material and dynamical-scattering models.
 
 A selected q probes a Fourier component of the structure. It does **not** select a unique spatial patch or a unique island size. Features around different sub-rods may mix different terrace/height correlations and coherent interference. Geometry alone cannot predict XPCS two-time dynamics.''')
     with tab4:
@@ -220,7 +245,15 @@ A selected q probes a Fourier component of the structure. It does **not** select
         settings=json.dumps(asdict(g),indent=2)
         export_button('Download geometry JSON',settings,'geometry.json','application/json')
         buf=io.BytesIO()
-        np.savez_compressed(buf,u_mm=u,v_mm=v,relative_intensity=I,q_lab_Ainv=qmap,hkl=qcmap*g.a/(2*np.pi),geometry_json=np.array(settings))
+        np.savez_compressed(buf,u_mm=u,v_mm=v,relative_intensity=I,
+                            morphology_intensity=calculation['morphology_intensity'],
+                            intrinsic_intensity=calculation['intrinsic_intensity'],
+                            detector_signal=calculation['detector_signal'],
+                            solid_angle_sr=calculation['solid_angle_sr'],
+                            signal_reference_sr=np.array(SIGNAL_REFERENCE_SR),
+                            displayed_quantity=np.array(intensity_key),
+                            response_json=np.array(json.dumps(asdict(response))),
+                            q_lab_Ainv=qmap,hkl=qcmap*g.a/(2*np.pi),geometry_json=np.array(settings))
         export_button('Download image + hkl maps (NPZ)',buf.getvalue(),'detector_maps.npz','application/octet-stream')
         uploaded=st.file_uploader('Load a saved geometry JSON',type=['json'])
         if uploaded:
@@ -235,9 +268,15 @@ A selected q probes a Fourier component of the structure. It does **not** select
         st.markdown('''### What is exact and what is approximate?
 **Exact within the stated geometry:** elastic scattering vectors; plane-detector projection; cubic crystal/lab transformations; straight mean-normal CTR/sphere intersections; local detector-to-hkl derivatives. Refraction is neglected.
 
-**Teaching intensity:** Gaussian transverse rod profiles, with widths from coherence and an approximate pixel-resolution term. For nonzero miscut the longitudinal relative weight is sinc²(l−L) exp[−(2π(l−L)σ̃tot)²], taken from the per-sub-rod factor in Eq. (17). The common ideal-CTR intensity I0 is omitted. This does not reproduce absolute counts or Bragg enhancement. At zero miscut one Gaussian CTR is drawn with constant longitudinal weight. For non-specular families the same envelope is illustrative.
+**Teaching intensity:** Gaussian transverse rod profiles with physical widths from coherence. Finite pixels are integrated by midpoint quadrature, without extra Gaussian pixel blur. For nonzero miscut the longitudinal relative weight is sinc²(l−L) exp[−(2π(l−L)σ̃tot)²], taken from the per-sub-rod factor in Eq. (17). Morphology-only mode omits the common CTR factor. At zero miscut one Gaussian CTR is drawn. For non-specular families the same envelope is illustrative. Relative weights are not an absolute cross-section normalization when coherence changes.
 
-The full paper separates sharp peaks Ip, a broad component Iw from terrace-width variation, and diffuse Is from step jaggedness. **The Linked views teaching image includes only a simplified Ip-like component.** The **Surface forward simulation** tab instead calculates coherent scattering from explicit nonideal height maps; its width CV and edge RMS are not automatically the paper’s σw and σs. It includes islands of the same material and independent-patch intensity averaging. See SURFACE_MODEL.md for equations and statistical assumptions. No film thickness fringes, material structure factors, systematic absences, absorption, polarization correction, instrument calibration, multiple scattering, or growth/XPCS dynamics are included.
+**Detector response:** Intrinsic intensity is the unweighted pixel average of the selected scattering model. Relative detector signal integrates intensity × polarization × dΩ, with dΩ = D du dv / (D²+u²+v²)^(3/2), divided by a fixed 10⁻⁹ sr reference. No image is normalized to its own peak. Optional polarization assumes Thomson scattering with no outgoing polarization analyzer. Unit efficiency is assumed; there is no absolute flux calibration. The exact pixel mapping already captures rod crossing geometry: no extra rod-interception or scan Lorentz multiplier is applied. Row sums are detector-coordinate profiles, not corrected intrinsic rod integrals.
+
+**Optional ideal column:** |Fs + Fb z/(1−z)|², z = exp(−1/N − i qz a). The user supplies constant complex unit-cell amplitudes (default 1) and an amplitude damping length N in cells. This is a phenomenological semi-infinite column model, not a finite film or a calculated absorption correction. Near Bragg peaks, both quadrature convergence and the limits of kinematic theory matter.
+
+The full paper separates sharp peaks Ip, a broad component Iw from terrace-width variation, and diffuse Is from step jaggedness. **The Linked views teaching image includes only a simplified Ip-like component.** The **Surface forward simulation** tab instead calculates coherent scattering from explicit nonideal height maps; its width CV and edge RMS are not automatically the paper’s σw and σs. It includes islands of the same material and independent-patch intensity averaging. Both modes share the detector response and optional column factor. No film thickness fringes, atomic structure-factor database, systematic absences, calculated absorption, instrument calibration, multiple scattering, or growth/XPCS dynamics are included.
+
+Detector references: Schlepütz et al., J. Appl. Cryst. 44, 73–83 (2011), doi:10.1107/S0021889810048922; Gasser et al., J. Appl. Cryst. 58, 96–106 (2025), doi:10.1107/S1600576724010628. See DETECTOR_RESPONSE.md for equations, conventions and validation.
 
 ### Paper read
 Both supplied files are byte-identical: Trevor A. Petach, David Goldhaber-Gordon, Apurva Mehta and Michael F. Toney, *Crystal truncation rods from miscut surfaces*, arXiv:1706.00484v1 (2017), 10 pages. The supplemental material is referenced in the paper but was not attached.

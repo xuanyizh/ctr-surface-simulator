@@ -103,15 +103,14 @@ def rod_intersections(g):
 def intensity_at(g,qc):
     """Normalized rod weights from Eq.17 times Gaussian transverse profiles.
     Not a full evaluation of paper Eqs.12/22/26. No absolute counts.
-    Gaussian pixel blur approximates resolution; geometric centres are exact.
+    Finite pixels are integrated by detector_response, not broadened here.
     """
     scale=2*np.pi/g.a
     h,k,l=np.moveaxis(qc/scale,-1,0)
     tan=np.tan(np.deg2rad(g.miscut))
-    # Beam coherence width plus an isotropic approximation to pixel integration.
-    pix=g.wavevector*g.pitch/g.distance/np.sqrt(12)
-    sx=np.hypot(1/(g.coherence_x*1e4),pix)
-    sy=np.hypot(1/(g.coherence_y*1e4),pix)
+    # Physical Gaussian widths only: detector pitch must not change the sample.
+    sx=1/(g.coherence_x*1e4)
+    sy=1/(g.coherence_y*1e4)
     dy=(k-g.k)*scale
     if g.miscut==0:
         return np.exp(-0.5*(((h-g.h)*scale/sx)**2+(dy/sy)**2))
@@ -123,14 +122,21 @@ def intensity_at(g,qc):
         result+=w*np.exp(-0.5*((dx/sx)**2+(dy/sy)**2))
     return result
 
-def detector_image(g):
+def detector_calculation(g, response=None):
+    from detector_response import DetectorResponse, integrate_pixels
+    response = DetectorResponse() if response is None else response
     u=(np.arange(g.nx)-(g.nx-1)/2)*g.pitch
     v=(np.arange(g.ny)-(g.ny-1)/2)*g.pitch
     U,V=np.meshgrid(u,v)
     q,qc,out=pixel_q(g,U,V)
-    intensity=intensity_at(g,qc)
-    intensity=np.where((out@g.normal>0)&(g.incidence>0),intensity,0.)
-    return u,v,intensity,q,qc
+    result=integrate_pixels(g,response,lambda points:intensity_at(g,points),u,v)
+    result.update(u_mm=u,v_mm=v,q_lab=q,q_crystal=qc)
+    return result
+
+def detector_image(g, response=None):
+    """Compatibility API; intensity is the pixel-averaged intrinsic model."""
+    r=detector_calculation(g,response)
+    return r['u_mm'],r['v_mm'],r['intrinsic_intensity'],r['q_lab'],r['q_crystal']
 
 def pixel_jacobian(g,u,v):
     """Columns = change in (h,k,l) per +1 detector column / row."""
